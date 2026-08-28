@@ -6,6 +6,7 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+from gtfb.config.models import AppCloseSchedule, ConfigProfile
 from gtfb.core.scheduler import BedtimeScheduler, calculate_delay
 
 
@@ -251,8 +252,64 @@ class TestBedtimeScheduler(unittest.TestCase):
         scheduler._stop_event.clear()
         self.assertEqual(scheduler.get_status_detail(), "Bedtime enforcement active")
 
+    def test_update_config_updates_scheduler_in_memory(self):
+        scheduler = BedtimeScheduler(target_hour=22, target_minute=0)
+        self.assertEqual(scheduler.target_hour, 22)
+        self.assertEqual(scheduler.target_minute, 0)
+        self.assertTrue(scheduler.enabled)
+
+        new_config = ConfigProfile(
+            app_close_schedule=AppCloseSchedule(
+                target_hour=23,
+                target_minute=30,
+                enabled=False,
+            )
+        )
+        scheduler.update_config(new_config)
+
+        self.assertEqual(scheduler.target_hour, 23)
+        self.assertEqual(scheduler.target_minute, 30)
+        self.assertFalse(scheduler.enabled)
+
+    def test_update_config_dynamically_updates_countdown_during_active_run(self):
+        scheduler = BedtimeScheduler(target_hour=22, target_minute=0, check_interval=0.01)
+        scheduler.start()
+        try:
+            self.assertTrue(scheduler.is_running())
+            self.assertIn("Bedtime at 22:00", scheduler.get_status_detail())
+
+            # Update bedtime config to 23:30 while running
+            new_config = ConfigProfile(
+                app_close_schedule=AppCloseSchedule(target_hour=23, target_minute=30, enabled=True)
+            )
+            scheduler.update_config(new_config)
+
+            self.assertIn("Bedtime at 23:30", scheduler.get_status_detail())
+        finally:
+            scheduler.stop()
+
+    def test_scheduler_disabled_skips_closer_fn(self):
+        mock_closer = MagicMock()
+        scheduler = BedtimeScheduler(
+            target_hour=22,
+            target_minute=0,
+            check_interval=0.01,
+            closer_fn=mock_closer,
+            enabled=False,
+        )
+
+        past_time = datetime.now() - timedelta(seconds=1)
+        with patch.object(scheduler, "get_next_target", return_value=past_time):
+            scheduler.start()
+            time.sleep(0.1)
+            scheduler.stop()
+
+        mock_closer.assert_not_called()
+        self.assertFalse(scheduler.is_running())
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

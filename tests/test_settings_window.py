@@ -401,7 +401,7 @@ class TestSettingsWindow(unittest.TestCase):
             instance = SettingsWindow.open_or_focus(config=custom_config)
             self.assertEqual(instance.config, custom_config)
 
-    def test_create_window_creates_sections(self):
+    def test_create_window_creates_sections_and_action_buttons(self):
         custom_config = ConfigProfile(
             app_close_schedule=AppCloseSchedule(target_hour=23, target_minute=30),
             block_rules=[BlockRule(domains=["example.com", "custom.org"])],
@@ -422,7 +422,129 @@ class TestSettingsWindow(unittest.TestCase):
             finally:
                 window._on_close()
 
+    def test_add_action_buttons_creates_buttons(self):
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            window = SettingsWindow()
+            frame = tk.Frame(root)
+            window._add_action_buttons(frame)
+            buttons = [w for w in frame.winfo_children()[0].winfo_children() if isinstance(w, tk.ttk.Button) or isinstance(w, tk.Button)]
+            button_texts = [b.cget("text") for b in buttons]
+            self.assertIn("Save Settings", button_texts)
+            self.assertIn("Cancel", button_texts)
+        finally:
+            root.destroy()
+
+    def test_on_save_success_updates_config_and_invokes_callback(self):
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            callback = MagicMock()
+            initial_config = ConfigProfile(
+                app_close_schedule=AppCloseSchedule(target_hour=22, target_minute=0, enabled=True),
+                block_rules=[BlockRule(domains=["reddit.com"])],
+            )
+            window = SettingsWindow(config=initial_config, on_save_callback=callback)
+            window.root = root
+
+            window.bedtime_section = BedtimeSection(root, config=initial_config)
+            window.blocklist_section = BlocklistSection(root, initial_domains=["reddit.com"])
+
+            # Simulate user editing values in UI
+            window.bedtime_section.var_hour.set("23")
+            window.bedtime_section.spin_hour.set("23")
+            window.bedtime_section.var_minute.set("45")
+            window.bedtime_section.spin_minute.set("45")
+            window.bedtime_section.var_enabled.set(False)
+            window.bedtime_section.var_grace_period.set(45)
+            window.bedtime_section.spin_grace.set("45")
+
+            # Add domain to blocklist
+            window.blocklist_section.entry_domain.insert(0, "youtube.com")
+            window.blocklist_section.on_add()
+
+            with patch("gtfb.ui.settings_window.save_config_atomic") as mock_save, \
+                 patch.object(window, "_on_close") as mock_close:
+                window._on_save()
+
+                mock_save.assert_called_once()
+                saved_profile = mock_save.call_args[0][0]
+                self.assertEqual(saved_profile.app_close_schedule.target_hour, 23)
+                self.assertEqual(saved_profile.app_close_schedule.target_minute, 45)
+                self.assertFalse(saved_profile.app_close_schedule.enabled)
+                self.assertEqual(saved_profile.app_close_schedule.grace_period_seconds, 45)
+                self.assertEqual(saved_profile.block_rules[0].domains, ["reddit.com", "youtube.com"])
+
+                callback.assert_called_once_with(saved_profile)
+                mock_close.assert_called_once()
+        finally:
+            root.destroy()
+
+    def test_on_save_validation_error_shows_messagebox_and_does_not_close(self):
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            callback = MagicMock()
+            window = SettingsWindow(on_save_callback=callback)
+            window.root = root
+            window.bedtime_section = BedtimeSection(root)
+            window.blocklist_section = BlocklistSection(root)
+
+            # Invalid hour
+            window.bedtime_section.spin_hour.set("99")
+
+            with patch("gtfb.ui.settings_window.save_config_atomic") as mock_save, \
+                 patch("tkinter.messagebox.showerror") as mock_error, \
+                 patch.object(window, "_on_close") as mock_close:
+                window._on_save()
+
+                mock_error.assert_called_once()
+                self.assertEqual(mock_error.call_args[0][0], "Error Saving Settings")
+                mock_save.assert_not_called()
+                callback.assert_not_called()
+                mock_close.assert_not_called()
+        finally:
+            root.destroy()
+
+    def test_on_save_disk_failure_shows_messagebox_and_does_not_close(self):
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            callback = MagicMock()
+            window = SettingsWindow(on_save_callback=callback)
+            window.root = root
+            window.bedtime_section = BedtimeSection(root)
+            window.blocklist_section = BlocklistSection(root)
+
+            with patch("gtfb.ui.settings_window.save_config_atomic", side_effect=IOError("Permission denied")), \
+                 patch("tkinter.messagebox.showerror") as mock_error, \
+                 patch.object(window, "_on_close") as mock_close:
+                window._on_save()
+
+                mock_error.assert_called_once_with("Error Saving Settings", "Permission denied")
+                callback.assert_not_called()
+                mock_close.assert_not_called()
+        finally:
+            root.destroy()
+
+    def test_open_or_focus_updates_callback_if_window_already_exists(self):
+        mock_root = MagicMock()
+        mock_root.winfo_exists.return_value = True
+
+        first_callback = MagicMock()
+        first_instance = SettingsWindow(on_save_callback=first_callback)
+        first_instance.root = mock_root
+        SettingsWindow._instance = first_instance
+
+        new_callback = MagicMock()
+        with patch.object(first_instance, "_bring_to_front"):
+            result = SettingsWindow.open_or_focus(on_save_callback=new_callback)
+            self.assertEqual(result, first_instance)
+            self.assertEqual(first_instance.on_save_callback, new_callback)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

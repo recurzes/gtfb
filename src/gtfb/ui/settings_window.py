@@ -7,9 +7,9 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Any, Callable, Dict, List, Optional
 
-from gtfb.config.models import ConfigProfile
+from gtfb.config.models import BlockRule, ConfigProfile
 from gtfb.config.sanitizer import clean_domain_input
-from gtfb.config.storage import load_config
+from gtfb.config.storage import get_config_path, load_config, save_config_atomic
 
 logger = logging.getLogger("gtfb.ui.settings")
 
@@ -241,6 +241,8 @@ class SettingsWindow:
             if cls._instance and cls._instance.root:
                 try:
                     if cls._instance.root.winfo_exists():
+                        if on_save_callback is not None:
+                            cls._instance.on_save_callback = on_save_callback
                         cls._instance._bring_to_front()
                         return cls._instance
                 except Exception as err:
@@ -293,6 +295,49 @@ class SettingsWindow:
             except Exception as err:
                 logger.debug("Failed centering window geometry: %s", err)
 
+    def _add_action_buttons(self, container: tk.Misc) -> None:
+        """Add Save and Cancel action buttons."""
+        btn_frame = ttk.Frame(container)
+        btn_frame.pack(fill=tk.X, pady=(12, 0))
+
+        btn_cancel = ttk.Button(btn_frame, text="Cancel", command=self._on_close)
+        btn_cancel.pack(side=tk.RIGHT, padx=(6, 0))
+
+        btn_save = ttk.Button(btn_frame, text="Save Settings", command=self._on_save)
+        btn_save.pack(side=tk.RIGHT)
+
+    def _on_save(self) -> None:
+        """Validate inputs, save configuration atomically, notify callback, and close window."""
+        try:
+            if not self.bedtime_section or not self.blocklist_section:
+                return
+
+            bedtime_data = self.bedtime_section.validate_and_get()
+            domains = self.blocklist_section.get_domains()
+
+            # Update profile
+            self.config.app_close_schedule.enabled = bedtime_data["enabled"]
+            self.config.app_close_schedule.target_hour = bedtime_data["target_hour"]
+            self.config.app_close_schedule.target_minute = bedtime_data["target_minute"]
+            if "grace_period_seconds" in bedtime_data:
+                self.config.app_close_schedule.grace_period_seconds = bedtime_data["grace_period_seconds"]
+
+            if not self.config.block_rules:
+                self.config.block_rules.append(BlockRule())
+            self.config.block_rules[0].domains = domains
+
+            # Save atomically to disk
+            save_config_atomic(self.config, get_config_path())
+
+            # Notify live application/scheduler
+            if self.on_save_callback:
+                self.on_save_callback(self.config)
+
+            self._on_close()
+        except Exception as e:
+            logger.exception("Error saving settings: %s", e)
+            messagebox.showerror("Error Saving Settings", str(e))
+
     def _create_window(self) -> None:
         """Instantiate and run the Tkinter window mainloop."""
         try:
@@ -331,6 +376,9 @@ class SettingsWindow:
             )
             self.blocklist_section = BlocklistSection(main_frame, initial_domains=initial_domains)
             self.blocklist_section.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+
+            # Action buttons
+            self._add_action_buttons(main_frame)
 
             self.root.mainloop()
         except Exception as err:

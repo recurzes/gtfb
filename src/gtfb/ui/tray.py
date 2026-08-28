@@ -10,6 +10,7 @@ from PIL import Image
 import pystray
 from pystray import Menu, MenuItem as item
 
+from gtfb.config.models import ConfigProfile
 from gtfb.core.scheduler import BedtimeScheduler, SchedulerState
 from gtfb.ui.icons import (
     STATE_COLORS,
@@ -149,6 +150,15 @@ class TrayApp:
         if self.icon:
             self.icon.update_menu()
 
+    def on_settings_saved(self, new_config: ConfigProfile) -> None:
+        """Callback invoked when settings are saved in SettingsWindow."""
+        logger.info("Settings saved. Updating active scheduler...")
+        if self.scheduler:
+            self.scheduler.update_config(new_config)
+        self.update_tray_state()
+        if self.icon:
+            self.icon.update_menu()
+
     def on_open_settings(
         self,
         icon: Optional[pystray.Icon] = None,
@@ -158,6 +168,7 @@ class TrayApp:
         logger.info("Opening GTFB settings window from tray menu...")
         threading.Thread(
             target=SettingsWindow.open_or_focus,
+            kwargs={"on_save_callback": self.on_settings_saved},
             name="GTFBSettingsWindowThread",
             daemon=True,
         ).start()
