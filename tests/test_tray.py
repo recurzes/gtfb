@@ -38,24 +38,97 @@ class TestTrayMenuAndApp(unittest.TestCase):
     """Test TrayApp lifecycle and menu structure."""
 
     def test_menu_structure(self):
-        mock_app = MagicMock(spec=TrayApp)
-        mock_app.on_quit = MagicMock()
+        mock_scheduler = MagicMock()
+        mock_scheduler.is_running.return_value = False
+        app = TrayApp(scheduler=mock_scheduler)
 
-        menu = create_menu(mock_app)
+        menu = create_menu(app)
         self.assertIsInstance(menu, pystray.Menu)
-        
+
         items = list(menu.items)
-        self.assertEqual(len(items), 2)
+        # Expected: Status, Separator, Start Scheduler, Stop Scheduler, Separator, Quit
+        self.assertEqual(len(items), 6)
 
-        # First item: 'GTFB — Idle' (disabled)
-        idle_item = items[0]
-        self.assertEqual(idle_item.text, "GTFB — Idle")
-        self.assertFalse(idle_item.enabled)
+        # Item 0: Status label (disabled)
+        status_item = items[0]
+        self.assertEqual(str(status_item), "Status: Stopped")
+        self.assertFalse(status_item.enabled)
 
-        # Second item: 'Quit' (enabled, wired to on_quit)
-        quit_item = items[1]
+        # Item 1: Separator
+        self.assertEqual(str(items[1]), "- - - -")
+
+        # Item 2: Start Scheduler
+        start_item = items[2]
+        self.assertEqual(start_item.text, "Start Scheduler")
+        self.assertTrue(start_item.visible)
+        self.assertEqual(start_item._action, app.on_start)
+
+        # Item 3: Stop Scheduler
+        stop_item = items[3]
+        self.assertEqual(stop_item.text, "Stop Scheduler")
+        self.assertFalse(stop_item.visible)
+        self.assertEqual(stop_item._action, app.on_stop)
+
+        # Item 4: Separator
+        self.assertEqual(str(items[4]), "- - - -")
+
+        # Item 5: Quit
+        quit_item = items[5]
         self.assertEqual(quit_item.text, "Quit")
         self.assertTrue(quit_item.enabled)
+        self.assertEqual(quit_item._action, app.on_quit)
+
+    def test_menu_dynamic_state_when_running(self):
+        mock_scheduler = MagicMock()
+        mock_scheduler.is_running.return_value = True
+        app = TrayApp(scheduler=mock_scheduler)
+
+        menu = app.build_menu()
+        items = list(menu.items)
+
+        # When running: Status is 'Status: Running', Start is hidden, Stop is visible
+        status_item = items[0]
+        self.assertEqual(str(status_item), "Status: Running")
+
+        start_item = items[2]
+        self.assertFalse(start_item.visible)
+
+        stop_item = items[3]
+        self.assertTrue(stop_item.visible)
+
+    def test_is_scheduler_running_and_stopped(self):
+        mock_scheduler = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler)
+
+        mock_scheduler.is_running.return_value = True
+        self.assertTrue(app.is_scheduler_running())
+        self.assertFalse(app.is_scheduler_stopped())
+
+        mock_scheduler.is_running.return_value = False
+        self.assertFalse(app.is_scheduler_running())
+        self.assertTrue(app.is_scheduler_stopped())
+
+        app.scheduler = None
+        self.assertFalse(app.is_scheduler_running())
+        self.assertTrue(app.is_scheduler_stopped())
+
+    def test_on_start_invokes_scheduler_start_and_updates_menu(self):
+        mock_scheduler = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler)
+        app.icon.update_menu = MagicMock()
+
+        app.on_start()
+        mock_scheduler.start.assert_called_once()
+        app.icon.update_menu.assert_called_once()
+
+    def test_on_stop_invokes_scheduler_stop_and_updates_menu(self):
+        mock_scheduler = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler)
+        app.icon.update_menu = MagicMock()
+
+        app.on_stop()
+        mock_scheduler.stop.assert_called_once()
+        app.icon.update_menu.assert_called_once()
 
     def test_tray_app_initialization(self):
         app = TrayApp()

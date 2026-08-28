@@ -137,6 +137,66 @@ class TestBedtimeScheduler(unittest.TestCase):
 
         self.assertFalse(scheduler.is_running())
 
+    def test_rapid_start_stop_toggling_thread_safety(self):
+        """Test rapid start and stop toggling without thread leaks or crashes."""
+        scheduler = BedtimeScheduler(check_interval=0.01)
+
+        for _ in range(20):
+            scheduler.start()
+            self.assertTrue(scheduler.is_running())
+            scheduler.stop(timeout=0.5)
+            self.assertFalse(scheduler.is_running())
+
+        # Test concurrent start/stop calls from multiple threads
+        def toggle():
+            for _ in range(10):
+                scheduler.start()
+                time.sleep(0.005)
+                scheduler.stop(timeout=0.5)
+
+        threads = [threading.Thread(target=toggle) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        scheduler.stop(timeout=0.5)
+        self.assertFalse(scheduler.is_running())
+
+    def test_stopped_scheduler_prevents_closer_execution(self):
+        """Test that stopping the scheduler halts countdown and prevents closer execution."""
+        mock_closer = MagicMock()
+        scheduler = BedtimeScheduler(check_interval=0.01, closer_fn=mock_closer)
+
+        scheduler.start()
+        self.assertTrue(scheduler.is_running())
+        scheduler.stop(timeout=0.5)
+        self.assertFalse(scheduler.is_running())
+
+        # Wait to ensure closer is not invoked after stopping
+        time.sleep(0.05)
+        mock_closer.assert_not_called()
+
+    def test_restart_scheduler_rearms_countdown(self):
+        """Test restarting a stopped scheduler successfully spawns a new worker thread."""
+        mock_closer = MagicMock()
+        scheduler = BedtimeScheduler(check_interval=0.01, closer_fn=mock_closer)
+
+        scheduler.start()
+        self.assertTrue(scheduler.is_running())
+        first_thread = scheduler._thread
+
+        scheduler.stop(timeout=0.5)
+        self.assertFalse(scheduler.is_running())
+
+        scheduler.start()
+        self.assertTrue(scheduler.is_running())
+        self.assertIsNot(scheduler._thread, first_thread)
+
+        scheduler.stop(timeout=0.5)
+        self.assertFalse(scheduler.is_running())
+
 
 if __name__ == "__main__":
     unittest.main()
+
