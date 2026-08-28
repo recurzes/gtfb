@@ -10,6 +10,7 @@ from PIL import Image
 import pystray
 from pystray import Menu, MenuItem as item
 
+from gtfb.api.server import APIServer
 from gtfb.config.models import ConfigProfile
 from gtfb.core.scheduler import BedtimeScheduler, SchedulerState
 from gtfb.ui.icons import (
@@ -37,10 +38,12 @@ class TrayApp:
         icon_path: Optional[Union[Path, str]] = None,
         scheduler: Optional[BedtimeScheduler] = None,
         on_quit: Optional[Callable[[], None]] = None,
+        api_server: Optional[APIServer] = None,
     ) -> None:
         self.icon_path = icon_path
         self.scheduler = scheduler or BedtimeScheduler()
         self.on_quit_callback = on_quit
+        self.api_server = api_server if api_server is not None else APIServer()
         self.current_state: str = "STOPPED"
         self._updater_thread: Optional[threading.Thread] = None
         self._updater_stop_event = threading.Event()
@@ -198,10 +201,15 @@ class TrayApp:
         )
 
     def run(self, setup: Optional[Callable[[pystray.Icon], None]] = None) -> None:
-        """Start the bedtime scheduler, status updater, and system tray event loop."""
+        """Start the bedtime scheduler, status updater, API server, and system tray event loop."""
         logger.info("Starting GTFB system tray application...")
         if self.scheduler:
             self.scheduler.start()
+        if self.api_server:
+            try:
+                self.api_server.start()
+            except Exception as err:
+                logger.exception("Error starting local API server: %s", err)
         self._start_status_updater()
         self.update_tray_state()
         self.icon.run(setup=setup)
@@ -224,6 +232,12 @@ class TrayApp:
                 self.scheduler.stop()
             except Exception as err:
                 logger.exception("Error stopping scheduler: %s", err)
+
+        if self.api_server:
+            try:
+                self.api_server.stop()
+            except Exception as err:
+                logger.exception("Error stopping local API server: %s", err)
 
         if self.on_quit_callback:
             try:
