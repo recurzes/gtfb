@@ -1,12 +1,15 @@
 """Application entry point for GTFB desktop application and CLI runner."""
 
 import argparse
+import logging
 import sys
 
 from gtfb import __version__
-from gtfb.config import DEFAULT_TARGET_HOUR, DEFAULT_TARGET_MINUTE
-from gtfb.core.scheduler import run_scheduler_cli
+from gtfb.config import DEFAULT_TARGET_HOUR, DEFAULT_TARGET_MINUTE, setup_logging
+from gtfb.core.scheduler import BedtimeScheduler, run_scheduler_cli
 from gtfb.ui.tray import TrayApp
+
+logger = logging.getLogger("gtfb.app")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,10 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
+    setup_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.cli or args.dry_run:
+    if args.cli:
         try:
             run_scheduler_cli(
                 target_hour=args.hour,
@@ -68,19 +72,28 @@ def main(argv: list[str] | None = None) -> int:
             print("\nOperation cancelled by user.")
             return 130
         except Exception as e:
+            logger.exception("Error in CLI runner: %s", e)
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
     try:
-        app = TrayApp()
+        scheduler = BedtimeScheduler(
+            target_hour=args.hour,
+            target_minute=args.minute,
+            dry_run=args.dry_run,
+            shutdown=not args.no_shutdown,
+        )
+        app = TrayApp(scheduler=scheduler)
         app.run()
         return 0
     except KeyboardInterrupt:
         return 130
     except Exception as e:
+        logger.exception("Error starting GTFB tray app: %s", e)
         print(f"Error starting GTFB tray app: {e}", file=sys.stderr)
         return 1
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

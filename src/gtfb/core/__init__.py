@@ -14,6 +14,7 @@ from gtfb.core.platform_utils import (
     is_gui_application,
 )
 from gtfb.core.scheduler import (
+    BedtimeScheduler,
     calculate_delay,
     run_scheduler_cli,
     wait_until_shutdown_time,
@@ -29,7 +30,9 @@ __all__ = [
     "close_gui_applications",
     "get_running_gui_apps",
     "shutdown_system",
+    "BedtimeScheduler",
     "calculate_delay",
     "wait_until_shutdown_time",
     "run_scheduler_cli",
 ]
+

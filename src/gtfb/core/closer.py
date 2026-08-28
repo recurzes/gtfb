@@ -100,11 +100,14 @@ def get_running_gui_apps() -> List[Tuple[psutil.Process, str]]:
     return apps
 
 
-def close_gui_applications() -> List[str]:
+def close_gui_applications(dry_run: bool = False) -> List[str]:
     """Identify and close all running GUI applications gracefully.
 
+    Args:
+        dry_run: If True, only scan and return detected GUI applications without terminating them.
+
     Returns:
-        List[str]: List of application names that were closed.
+        List[str]: List of application names that were closed (or detected in dry-run).
     """
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting to close GUI applications...")
     print("    (Only closing apps from 'Apps' tab, not background processes)\n")
@@ -118,27 +121,33 @@ def close_gui_applications() -> List[str]:
     for proc, title in gui_apps:
         try:
             proc_name = proc.name()
-            print(f"    Closing: {proc_name} - '{title}' (PID: {proc.pid})")
-            if close_application(proc, window_title=title):
+            if dry_run:
+                print(f"    [DRY RUN] Would close: {proc_name} - '{title}' (PID: {proc.pid})")
                 closed_count += 1
                 close_apps.append(proc_name)
+            else:
+                print(f"    Closing: {proc_name} - '{title}' (PID: {proc.pid})")
+                if close_application(proc, window_title=title):
+                    closed_count += 1
+                    close_apps.append(proc_name)
 
-            delay = random.uniform(0.5, 1.5)
-            time.sleep(delay)
+                delay = random.uniform(0.5, 1.5)
+                time.sleep(delay)
         except (psutil.AccessDenied, psutil.NoSuchProcess, PermissionError):
             pass
 
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Application closing complete.")
-    print(f"  Closed {closed_count} GUI applications")
+    print(f"  {'Detected' if dry_run else 'Closed'} {closed_count} GUI applications")
 
     if close_apps:
-        print(f"\n Apps closed: {', '.join(set(close_apps))}")
+        print(f"\n Apps {'detected' if dry_run else 'closed'}: {', '.join(set(close_apps))}")
 
     return close_apps
 
 
 # Alias for concise import
 close_gui_apps = close_gui_applications
+
 
 
 def shutdown_system(

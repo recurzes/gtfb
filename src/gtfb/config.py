@@ -1,9 +1,39 @@
-"""Configuration constants and default settings for GTFB."""
+import logging
+from pathlib import Path
+from typing import Optional, Union
 
 DEFAULT_TARGET_HOUR: int = 22
 DEFAULT_TARGET_MINUTE: int = 0
 DEFAULT_GRACE_PERIOD_SECONDS: float = 3.0
 DEFAULT_SHUTDOWN_DELAY_SECONDS: int = 30
+DEFAULT_LOG_FILE: str = "bedtime.log"
+
+
+def setup_logging(
+    log_file: Optional[Union[str, Path]] = DEFAULT_LOG_FILE,
+    level: int = logging.INFO,
+) -> None:
+    """Configure root logging to output to both console and a log file."""
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        return
+
+    root_logger.setLevel(level)
+    formatter = logging.Formatter(
+        "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    if log_file:
+        file_path = Path(log_file)
+        file_handler = logging.FileHandler(file_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+
 
 # Processes that should never be identified or closed as user GUI applications
 SYSTEM_EXCLUDED_PROCESSES: list[str] = [

@@ -8,6 +8,8 @@ from PIL import Image, ImageDraw
 import pystray
 from pystray import Menu, MenuItem as item
 
+from gtfb.core.scheduler import BedtimeScheduler
+
 logger = logging.getLogger("gtfb.ui.tray")
 
 
@@ -71,8 +73,10 @@ class TrayApp:
     def __init__(
         self,
         icon_path: Optional[Path | str] = None,
+        scheduler: Optional[BedtimeScheduler] = None,
         on_quit: Optional[Callable[[], None]] = None,
     ) -> None:
+        self.scheduler = scheduler or BedtimeScheduler()
         self.on_quit_callback = on_quit
         self.icon_image = self._load_icon(icon_path)
         self.menu = self._create_menu()
@@ -92,13 +96,21 @@ class TrayApp:
         return create_menu(self)
 
     def run(self, setup: Optional[Callable[[pystray.Icon], None]] = None) -> None:
-        """Start the system tray event loop."""
+        """Start the bedtime scheduler and system tray event loop."""
         logger.info("Starting GTFB system tray application...")
+        if self.scheduler:
+            self.scheduler.start()
         self.icon.run(setup=setup)
 
     def on_quit(self, icon: Optional[pystray.Icon] = None, item: Optional[item] = None) -> None:
         """Handle Quit menu action and stop the system tray icon."""
         logger.info("Shutting down GTFB system tray application...")
+        if self.scheduler:
+            try:
+                self.scheduler.stop()
+            except Exception as err:
+                logger.exception("Error stopping scheduler: %s", err)
+
         if self.on_quit_callback:
             try:
                 self.on_quit_callback()
@@ -111,3 +123,4 @@ class TrayApp:
     def stop(self) -> None:
         """Programmatically stop the tray application."""
         self.on_quit()
+
