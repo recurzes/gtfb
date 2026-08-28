@@ -1,12 +1,22 @@
 """Bedtime countdown, delay calculation, and scheduling loop."""
 
+import logging
+import threading
 import time
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 from gtfb.config import DEFAULT_TARGET_HOUR, DEFAULT_TARGET_MINUTE
-from gtfb.core.closer import check_privileges, close_gui_applications, get_running_gui_apps, shutdown_system
+from gtfb.core.closer import (
+    check_privileges,
+    close_gui_applications,
+    close_gui_apps,
+    get_running_gui_apps,
+    shutdown_system,
+)
 from gtfb.core.platform_utils import CURRENT_OS, PYWIN32_AVAILABLE
+
+logger = logging.getLogger("gtfb.core.scheduler")
 
 
 def calculate_delay(target_hour: int = DEFAULT_TARGET_HOUR, target_minute: int = DEFAULT_TARGET_MINUTE) -> Tuple[float, datetime]:
@@ -22,6 +32,91 @@ def calculate_delay(target_hour: int = DEFAULT_TARGET_HOUR, target_minute: int =
 
     time_difference = (target_time - now).total_seconds()
     return time_difference, target_time
+
+
+class BedtimeScheduler:
+    """Controllable background bedtime scheduler and application closer worker."""
+
+    def __init__(
+        self,
+        target_hour: int = DEFAULT_TARGET_HOUR,
+        target_minute: int = DEFAULT_TARGET_MINUTE,
+        dry_run: bool = False,
+        shutdown: bool = False,
+        check_interval: float = 1.0,
+        closer_fn: Optional[Callable[..., Any]] = None,
+    ) -> None:
+        self.target_hour = target_hour
+        self.target_minute = target_minute
+        self.dry_run = dry_run
+        self.shutdown = shutdown
+        self.check_interval = check_interval
+        self.closer_fn = closer_fn or close_gui_apps
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def get_next_target(self) -> datetime:
+        """Calculate the next target datetime based on target_hour and target_minute."""
+        now = datetime.now()
+        target = now.replace(hour=self.target_hour, minute=self.target_minute, second=0, microsecond=0)
+        if now >= target:
+            target += timedelta(days=1)
+        return target
+
+    def is_running(self) -> bool:
+        """Return True if the scheduler worker thread is alive and active."""
+        return self._thread is not None and self._thread.is_alive() and not self._stop_event.is_set()
+
+    def start(self) -> None:
+        """Start the scheduler background worker thread if not already running."""
+        if self._thread is not None and self._thread.is_alive():
+            logger.debug("Bedtime scheduler already running.")
+            return
+
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run_loop, name="SchedulerWorker", daemon=True)
+        self._thread.start()
+        logger.info(
+            "Bedtime scheduler worker started (target: %02d:%02d, dry_run=%s, shutdown=%s).",
+            self.target_hour,
+            self.target_minute,
+            self.dry_run,
+            self.shutdown,
+        )
+
+    def stop(self, timeout: float = 2.0) -> None:
+        """Signal the worker thread to stop and wait for it to join."""
+        self._stop_event.set()
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=timeout)
+            logger.info("Bedtime scheduler worker stopped.")
+
+    def _run_loop(self) -> None:
+        """Worker loop executing the bedtime countdown."""
+        logger.info("Bedtime scheduler worker loop running.")
+        target_time = self.get_next_target()
+        logger.info("Next scheduled bedtime target: %s", target_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            time_remaining = (target_time - now).total_seconds()
+
+            if time_remaining <= 0:
+                logger.warning("Bedtime reached! Executing application closing routine.")
+                try:
+                    self.closer_fn(dry_run=self.dry_run)
+                except TypeError:
+                    self.closer_fn()
+                except Exception as err:
+                    logger.exception("Error executing bedtime closer routine: %s", err)
+
+                if self.shutdown and not self.dry_run:
+                    logger.info("Initiating scheduled system shutdown...")
+                    shutdown_system(target_hour=self.target_hour, target_minute=self.target_minute)
+                break
+
+            self._stop_event.wait(timeout=self.check_interval)
+
 
 
 def wait_until_shutdown_time(
