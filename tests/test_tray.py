@@ -114,40 +114,90 @@ class TestTrayMenuAndApp(unittest.TestCase):
 
     def test_on_start_invokes_scheduler_start_and_updates_menu(self):
         mock_scheduler = MagicMock()
+        mock_scheduler.state = "COUNTING_DOWN"
+        mock_scheduler.get_status_detail.return_value = "Bedtime at 22:00 — 30m remaining"
         app = TrayApp(scheduler=mock_scheduler)
         app.icon.update_menu = MagicMock()
 
         app.on_start()
         mock_scheduler.start.assert_called_once()
+        self.assertEqual(app.current_state, "COUNTING_DOWN")
+        self.assertEqual(app.icon.title, "GTFB: Counting Down (Bedtime at 22:00 — 30m remaining)")
         app.icon.update_menu.assert_called_once()
 
     def test_on_stop_invokes_scheduler_stop_and_updates_menu(self):
         mock_scheduler = MagicMock()
+        mock_scheduler.state = "STOPPED"
+        mock_scheduler.get_status_detail.return_value = ""
         app = TrayApp(scheduler=mock_scheduler)
         app.icon.update_menu = MagicMock()
 
         app.on_stop()
         mock_scheduler.stop.assert_called_once()
+        self.assertEqual(app.current_state, "STOPPED")
+        self.assertEqual(app.icon.title, "GTFB: Stopped")
         app.icon.update_menu.assert_called_once()
+
 
     def test_tray_app_initialization(self):
         app = TrayApp()
         self.assertIsNotNone(app.icon)
         self.assertIsNotNone(app.scheduler)
-        self.assertEqual(app.icon.title, "GTFB - Anti-Distraction Suite")
+        self.assertEqual(app.icon.title, "GTFB: Stopped")
         self.assertEqual(app.icon.name, "gtfb")
 
     def test_tray_app_initialization_with_custom_scheduler(self):
         mock_scheduler = MagicMock()
+        mock_scheduler.state = "STOPPED"
+        mock_scheduler.get_status_detail.return_value = ""
         app = TrayApp(scheduler=mock_scheduler)
         self.assertEqual(app.scheduler, mock_scheduler)
 
-    def test_tray_app_run_starts_scheduler(self):
+    def test_update_tray_state_changes_icon_and_title(self):
+        app = TrayApp()
+        
+        # Test counting down with detail
+        app.update_tray_state("COUNTING_DOWN", "Bedtime at 22:00 — 42m remaining")
+        self.assertEqual(app.current_state, "COUNTING_DOWN")
+        self.assertEqual(app.icon.title, "GTFB: Counting Down (Bedtime at 22:00 — 42m remaining)")
+        self.assertIsInstance(app.icon.icon, Image.Image)
+
+        # Test stopped without detail
+        app.update_tray_state("STOPPED", "")
+        self.assertEqual(app.current_state, "STOPPED")
+        self.assertEqual(app.icon.title, "GTFB: Stopped")
+
+        # Test enforcing
+        app.update_tray_state("ENFORCING", "Bedtime enforcement active")
+        self.assertEqual(app.current_state, "ENFORCING")
+        self.assertEqual(app.icon.title, "GTFB: Enforcing (Bedtime enforcement active)")
+
+    def test_status_updater_thread_lifecycle(self):
+        app = TrayApp()
+        self.assertIsNone(app._updater_thread)
+
+        app._start_status_updater()
+        self.assertIsNotNone(app._updater_thread)
+        self.assertTrue(app._updater_thread.is_alive())
+
+        # Idempotent start
+        thread_ref = app._updater_thread
+        app._start_status_updater()
+        self.assertEqual(app._updater_thread, thread_ref)
+
+        app._stop_status_updater()
+        self.assertFalse(app._updater_thread.is_alive())
+
+    def test_tray_app_run_starts_scheduler_and_status_updater(self):
         mock_scheduler = MagicMock()
+        mock_scheduler.state = "COUNTING_DOWN"
+        mock_scheduler.get_status_detail.return_value = "Bedtime at 22:00 — 45m remaining"
         app = TrayApp(scheduler=mock_scheduler)
-        with patch.object(app.icon, "run") as mock_run:
+        with patch.object(app.icon, "run") as mock_run, \
+             patch.object(app, "_start_status_updater") as mock_updater:
             app.run()
             mock_scheduler.start.assert_called_once()
+            mock_updater.assert_called_once()
             mock_run.assert_called_once()
 
     def test_tray_app_on_quit_calls_callback_and_stops_icon(self):
@@ -167,6 +217,7 @@ class TestTrayMenuAndApp(unittest.TestCase):
         with patch.object(app, "on_quit") as mock_on_quit:
             app.stop()
             mock_on_quit.assert_called_once()
+
 
 
 
