@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger("gtfb.api")
@@ -12,6 +12,8 @@ logger = logging.getLogger("gtfb.api")
 
 class GTFBRequestHandler(BaseHTTPRequestHandler):
     """Base request handler for GTFB embedded localhost API with CORS support."""
+
+    config_provider: Optional[Callable[[], Any]] = None
 
     def _send_cors_headers(self) -> None:
         """Attach standard Cross-Origin Resource Sharing (CORS) headers."""
@@ -48,6 +50,35 @@ class GTFBRequestHandler(BaseHTTPRequestHandler):
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 },
             )
+        elif parsed.path == "/config":
+            try:
+                provider = (
+                    getattr(self.server, "config_provider", None)
+                    or self.config_provider
+                )
+                if provider is not None:
+                    cfg = provider()
+                    if isinstance(cfg, dict):
+                        config_data = cfg
+                    elif hasattr(cfg, "to_dict"):
+                        config_data = cfg.to_dict()
+                    else:
+                        config_data = dict(cfg)
+                else:
+                    from gtfb.config.storage import get_config_path, load_config_resilient
+
+                    config_data = load_config_resilient(get_config_path()).to_dict()
+
+                self._send_json_response(200, config_data)
+            except Exception as err:
+                logger.exception("Error processing /config request: %s", err)
+                self._send_json_response(
+                    500,
+                    {
+                        "error": "Internal Server Error",
+                        "message": str(err),
+                    },
+                )
         else:
             self._send_json_response(404, {"error": "Not Found", "path": self.path})
 

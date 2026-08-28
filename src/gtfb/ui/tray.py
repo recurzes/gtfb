@@ -39,11 +39,17 @@ class TrayApp:
         scheduler: Optional[BedtimeScheduler] = None,
         on_quit: Optional[Callable[[], None]] = None,
         api_server: Optional[APIServer] = None,
+        config: Optional[ConfigProfile] = None,
     ) -> None:
         self.icon_path = icon_path
         self.scheduler = scheduler or BedtimeScheduler()
         self.on_quit_callback = on_quit
-        self.api_server = api_server if api_server is not None else APIServer()
+        self.config = config
+        self.api_server = (
+            api_server
+            if api_server is not None
+            else APIServer(config_provider=self.get_active_config)
+        )
         self.current_state: str = "STOPPED"
         self._updater_thread: Optional[threading.Thread] = None
         self._updater_stop_event = threading.Event()
@@ -58,6 +64,14 @@ class TrayApp:
             menu=self.menu,
         )
         self.update_tray_state(initial_state)
+
+    def get_active_config(self) -> ConfigProfile:
+        """Return active ConfigProfile from in-memory cache or resilient disk load."""
+        if self.config is not None:
+            return self.config
+        from gtfb.config.storage import get_config_path, load_config_resilient
+
+        return load_config_resilient(get_config_path())
 
     def _load_icon(
         self,
@@ -155,7 +169,8 @@ class TrayApp:
 
     def on_settings_saved(self, new_config: ConfigProfile) -> None:
         """Callback invoked when settings are saved in SettingsWindow."""
-        logger.info("Settings saved. Updating active scheduler...")
+        logger.info("Settings saved. Updating active scheduler and config...")
+        self.config = new_config
         if self.scheduler:
             self.scheduler.update_config(new_config)
         self.update_tray_state()
