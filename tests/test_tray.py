@@ -46,8 +46,8 @@ class TestTrayMenuAndApp(unittest.TestCase):
         self.assertIsInstance(menu, pystray.Menu)
 
         items = list(menu.items)
-        # Expected: Status, Separator, Start Scheduler, Stop Scheduler, Separator, Quit
-        self.assertEqual(len(items), 6)
+        # Expected: Status, Separator, Settings..., Start Scheduler, Stop Scheduler, Separator, Quit
+        self.assertEqual(len(items), 7)
 
         # Item 0: Status label (disabled)
         status_item = items[0]
@@ -57,23 +57,29 @@ class TestTrayMenuAndApp(unittest.TestCase):
         # Item 1: Separator
         self.assertEqual(str(items[1]), "- - - -")
 
-        # Item 2: Start Scheduler
-        start_item = items[2]
+        # Item 2: Settings...
+        settings_item = items[2]
+        self.assertEqual(settings_item.text, "Settings...")
+        self.assertTrue(settings_item.enabled)
+        self.assertEqual(settings_item._action, app.on_open_settings)
+
+        # Item 3: Start Scheduler
+        start_item = items[3]
         self.assertEqual(start_item.text, "Start Scheduler")
         self.assertTrue(start_item.visible)
         self.assertEqual(start_item._action, app.on_start)
 
-        # Item 3: Stop Scheduler
-        stop_item = items[3]
+        # Item 4: Stop Scheduler
+        stop_item = items[4]
         self.assertEqual(stop_item.text, "Stop Scheduler")
         self.assertFalse(stop_item.visible)
         self.assertEqual(stop_item._action, app.on_stop)
 
-        # Item 4: Separator
-        self.assertEqual(str(items[4]), "- - - -")
+        # Item 5: Separator
+        self.assertEqual(str(items[5]), "- - - -")
 
-        # Item 5: Quit
-        quit_item = items[5]
+        # Item 6: Quit
+        quit_item = items[6]
         self.assertEqual(quit_item.text, "Quit")
         self.assertTrue(quit_item.enabled)
         self.assertEqual(quit_item._action, app.on_quit)
@@ -90,11 +96,28 @@ class TestTrayMenuAndApp(unittest.TestCase):
         status_item = items[0]
         self.assertEqual(str(status_item), "Status: Running")
 
-        start_item = items[2]
+        settings_item = items[2]
+        self.assertEqual(settings_item.text, "Settings...")
+        self.assertTrue(settings_item.enabled)
+
+        start_item = items[3]
         self.assertFalse(start_item.visible)
 
-        stop_item = items[3]
+        stop_item = items[4]
         self.assertTrue(stop_item.visible)
+
+    def test_on_open_settings_starts_thread(self):
+        app = TrayApp()
+        with patch("threading.Thread") as mock_thread_cls:
+            mock_thread = MagicMock()
+            mock_thread_cls.return_value = mock_thread
+
+            app.on_open_settings()
+
+            mock_thread_cls.assert_called_once()
+            _, kwargs = mock_thread_cls.call_args
+            self.assertTrue(kwargs.get("daemon"))
+            mock_thread.start.assert_called_once()
 
     def test_is_scheduler_running_and_stopped(self):
         mock_scheduler = MagicMock()
