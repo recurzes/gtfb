@@ -54,6 +54,7 @@ class BedtimeScheduler:
         self.closer_fn = closer_fn or close_gui_apps
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._lock = threading.Lock()
 
     def get_next_target(self) -> datetime:
         """Calculate the next target datetime based on target_hour and target_minute."""
@@ -69,27 +70,29 @@ class BedtimeScheduler:
 
     def start(self) -> None:
         """Start the scheduler background worker thread if not already running."""
-        if self._thread is not None and self._thread.is_alive():
-            logger.debug("Bedtime scheduler already running.")
-            return
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                logger.debug("Bedtime scheduler already running.")
+                return
 
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run_loop, name="SchedulerWorker", daemon=True)
-        self._thread.start()
-        logger.info(
-            "Bedtime scheduler worker started (target: %02d:%02d, dry_run=%s, shutdown=%s).",
-            self.target_hour,
-            self.target_minute,
-            self.dry_run,
-            self.shutdown,
-        )
+            self._stop_event.clear()
+            self._thread = threading.Thread(target=self._run_loop, name="SchedulerWorker", daemon=True)
+            self._thread.start()
+            logger.info(
+                "Bedtime scheduler worker started (target: %02d:%02d, dry_run=%s, shutdown=%s).",
+                self.target_hour,
+                self.target_minute,
+                self.dry_run,
+                self.shutdown,
+            )
 
     def stop(self, timeout: float = 2.0) -> None:
         """Signal the worker thread to stop and wait for it to join."""
-        self._stop_event.set()
-        if self._thread is not None and self._thread.is_alive():
-            self._thread.join(timeout=timeout)
-            logger.info("Bedtime scheduler worker stopped.")
+        with self._lock:
+            self._stop_event.set()
+            if self._thread is not None and self._thread.is_alive():
+                self._thread.join(timeout=timeout)
+                logger.info("Bedtime scheduler worker stopped.")
 
     def _run_loop(self) -> None:
         """Worker loop executing the bedtime countdown."""
