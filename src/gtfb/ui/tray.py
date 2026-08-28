@@ -18,6 +18,7 @@ from gtfb.ui.icons import (
     get_icon,
     load_tray_icon,
 )
+from gtfb.ui.settings_window import SettingsWindow
 
 logger = logging.getLogger("gtfb.ui.tray")
 
@@ -148,6 +149,19 @@ class TrayApp:
         if self.icon:
             self.icon.update_menu()
 
+    def on_open_settings(
+        self,
+        icon: Optional[pystray.Icon] = None,
+        item: Optional[pystray.MenuItem] = None,
+    ) -> None:
+        """Handle Open Settings menu action."""
+        logger.info("Opening GTFB settings window from tray menu...")
+        threading.Thread(
+            target=SettingsWindow.open_or_focus,
+            name="GTFBSettingsWindowThread",
+            daemon=True,
+        ).start()
+
     def build_menu(self) -> Menu:
         """Construct dynamic tray context menu."""
         return Menu(
@@ -157,6 +171,7 @@ class TrayApp:
                 enabled=False,
             ),
             Menu.SEPARATOR,
+            item("Settings...", self.on_open_settings),
             item(
                 "Start Scheduler",
                 self.on_start,
