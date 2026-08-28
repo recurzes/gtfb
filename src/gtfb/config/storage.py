@@ -34,6 +34,9 @@ def get_config_dir(app_name: str = "GTFB") -> Path:
         return Path.home() / ".config" / app_name.lower()
 
 
+get_app_dir = get_config_dir
+
+
 def get_config_path(filename: str = "config.json", app_name: str = "GTFB") -> Path:
     """Return full path to the configuration JSON file."""
     return get_config_dir(app_name=app_name) / filename
