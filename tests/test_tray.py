@@ -8,6 +8,8 @@ from PIL import Image
 import pystray
 
 from gtfb.app import build_parser
+from gtfb.config.models import ConfigProfile
+from gtfb.ui.settings_window import SettingsWindow
 from gtfb.ui.tray import TrayApp, create_menu, generate_fallback_icon, load_tray_icon
 
 
@@ -242,6 +244,33 @@ class TestTrayMenuAndApp(unittest.TestCase):
             with patch.object(app.icon, "stop"):
                 app.on_quit()
                 mock_settings.close.assert_called_once()
+
+    def test_tray_app_on_open_settings_spawns_thread_with_save_callback(self):
+        app = TrayApp()
+        with patch("threading.Thread") as mock_thread_cls:
+            mock_thread = MagicMock()
+            mock_thread_cls.return_value = mock_thread
+
+            app.on_open_settings()
+
+            mock_thread_cls.assert_called_once_with(
+                target=SettingsWindow.open_or_focus,
+                kwargs={"on_save_callback": app.on_settings_saved},
+                name="GTFBSettingsWindowThread",
+                daemon=True,
+            )
+            mock_thread.start.assert_called_once()
+
+    def test_tray_app_on_settings_saved_updates_scheduler_and_tray(self):
+        mock_scheduler = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler)
+
+        new_config = ConfigProfile()
+        with patch.object(app, "update_tray_state") as mock_update_tray:
+            app.on_settings_saved(new_config)
+
+            mock_scheduler.update_config.assert_called_once_with(new_config)
+            mock_update_tray.assert_called_once()
 
 
 
