@@ -200,6 +200,14 @@ class TrayApp:
         logger.info("Shutting down GTFB system tray application...")
         self._stop_status_updater()
 
+        # Close active settings window if open
+        settings_instance = SettingsWindow.get_instance()
+        if settings_instance:
+            try:
+                settings_instance.close()
+            except Exception as err:
+                logger.debug("Error closing settings window on quit: %s", err)
+
         if self.scheduler:
             try:
                 self.scheduler.stop()

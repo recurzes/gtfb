@@ -27,7 +27,7 @@ class BedtimeSection(ttk.LabelFrame):
         schedule = self.config.app_close_schedule
 
         # Enable / Disable enforcement checkbox
-        self.var_enabled = tk.BooleanVar(value=schedule.enabled)
+        self.var_enabled = tk.BooleanVar(master=self, value=schedule.enabled)
         self.chk_enabled = ttk.Checkbutton(
             self,
             text="Enable Bedtime App Closing",
@@ -38,7 +38,7 @@ class BedtimeSection(ttk.LabelFrame):
         # Hour input (0-23)
         self.lbl_hour = ttk.Label(self, text="Hour (0-23):")
         self.lbl_hour.grid(row=1, column=0, sticky="w", pady=4)
-        self.var_hour = tk.StringVar(value=f"{schedule.target_hour:02d}")
+        self.var_hour = tk.StringVar(master=self, value=f"{schedule.target_hour:02d}")
         self.spin_hour = ttk.Spinbox(
             self,
             from_=0,
@@ -53,7 +53,7 @@ class BedtimeSection(ttk.LabelFrame):
         # Minute input (0-59)
         self.lbl_minute = ttk.Label(self, text="Minute (0-59):")
         self.lbl_minute.grid(row=2, column=0, sticky="w", pady=4)
-        self.var_minute = tk.StringVar(value=f"{schedule.target_minute:02d}")
+        self.var_minute = tk.StringVar(master=self, value=f"{schedule.target_minute:02d}")
         self.spin_minute = ttk.Spinbox(
             self,
             from_=0,
@@ -68,7 +68,7 @@ class BedtimeSection(ttk.LabelFrame):
         # Grace Period input (seconds before force kill)
         self.lbl_grace = ttk.Label(self, text="Grace Period (seconds):")
         self.lbl_grace.grid(row=3, column=0, sticky="w", pady=4)
-        self.var_grace_period = tk.IntVar(value=schedule.grace_period_seconds)
+        self.var_grace_period = tk.IntVar(master=self, value=schedule.grace_period_seconds)
         self.spin_grace = ttk.Spinbox(
             self,
             from_=0,
@@ -339,11 +339,12 @@ class SettingsWindow:
             self._on_close()
 
     def _on_close(self) -> None:
-        """Cleanly destroy window and reset singleton reference."""
+        """Cleanly destroy window, exit mainloop, and reset singleton reference."""
         with SettingsWindow._lock:
             if self.root:
                 try:
                     if self.root.winfo_exists():
+                        self.root.quit()
                         self.root.destroy()
                 except Exception as err:
                     logger.debug("Error destroying settings root: %s", err)
@@ -353,5 +354,13 @@ class SettingsWindow:
                 SettingsWindow._instance = None
 
     def close(self) -> None:
-        """Public method to close the settings window."""
+        """Public method to close the settings window cleanly across threads."""
+        with SettingsWindow._lock:
+            if self.root:
+                try:
+                    if self.root.winfo_exists():
+                        self.root.after(0, self._on_close)
+                        return
+                except Exception as err:
+                    logger.debug("Error scheduling settings close: %s", err)
         self._on_close()
