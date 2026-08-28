@@ -234,12 +234,14 @@ class TestTrayMenuAndApp(unittest.TestCase):
             quit_callback.assert_called_once()
             mock_stop.assert_called_once()
 
-    def test_tray_app_stop_invokes_on_quit(self):
-        quit_callback = MagicMock()
-        app = TrayApp(on_quit=quit_callback)
-        with patch.object(app, "on_quit") as mock_on_quit:
-            app.stop()
-            mock_on_quit.assert_called_once()
+    def test_tray_app_on_quit_closes_active_settings_window(self):
+        mock_settings = MagicMock()
+        with patch("gtfb.ui.settings_window.SettingsWindow.get_instance", return_value=mock_settings), \
+             patch.object(TrayApp, "_stop_status_updater"):
+            app = TrayApp()
+            with patch.object(app.icon, "stop"):
+                app.on_quit()
+                mock_settings.close.assert_called_once()
 
 
 
