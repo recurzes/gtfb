@@ -11,7 +11,10 @@ from gtfb.core.platform_utils import (
     CURRENT_OS,
     PYWIN32_AVAILABLE,
     get_gui_windows_pywin32,
+    get_system_diagnostics,
+    is_admin_or_root,
     is_gui_application,
+    print_system_diagnostics,
 )
 from gtfb.core.scheduler import (
     BedtimeScheduler,
@@ -25,7 +28,10 @@ __all__ = [
     "CURRENT_OS",
     "PYWIN32_AVAILABLE",
     "get_gui_windows_pywin32",
+    "get_system_diagnostics",
+    "is_admin_or_root",
     "is_gui_application",
+    "print_system_diagnostics",
     "close_application",
     "close_gui_apps",
     "close_gui_applications",

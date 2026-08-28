@@ -50,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Scan and display running GUI applications immediately without waiting or closing anything.",
     )
+    parser.add_argument(
+        "--check-system",
+        "--diagnostics",
+        action="store_true",
+        dest="check_system",
+        help="Run system and platform capability diagnostic checks and exit.",
+    )
     return parser
 
 
@@ -58,6 +65,12 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.check_system:
+        from gtfb.core.platform_utils import print_system_diagnostics
+
+        print_system_diagnostics()
+        return 0
 
     if args.cli:
         try:

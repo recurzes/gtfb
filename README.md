@@ -20,13 +20,17 @@ gtfb/
 │       ├── __init__.py      # Package version and exports
 │       ├── app.py           # CLI / GUI runner entry point
 │       ├── config.py        # Default configuration values and rules
-│       └── core/            # Core process closing and scheduling engine
-│           ├── closer.py    # Process termination & shutdown logic
-│           ├── platform_utils.py # Cross-platform window detection
-│           └── scheduler.py # Bedtime countdown & trigger loop
+│       ├── core/            # Core process closing and scheduling engine
+│       │   ├── closer.py    # Process termination & shutdown logic
+│       │   ├── platform_utils.py # Cross-platform window detection & diagnostics
+│       │   └── scheduler.py # Bedtime countdown & trigger loop
+│       └── ui/              # Desktop GUI and system tray components
+│           ├── icons.py     # Dynamic state icon generation
+│           └── tray.py      # Pystray background runner
 ├── tests/                   # Automated unit and integration tests
-│   └── test_core.py
 ├── pyproject.toml           # Packaging metadata and dependencies
+├── docs/                    # Architectural and platform guides
+│   └── cross-platform.md
 └── README.md
 ```
 
@@ -48,6 +52,9 @@ pip install -e .
 ### CLI Usage
 
 ```bash
+# Check platform readiness and system tray backend
+gtfb --check-system
+
 # Run a dry-run check to list detectable GUI apps without closing anything
 gtfb --dry-run
 # or
@@ -59,6 +66,8 @@ gtfb --hour 22 --minute 30 --no-shutdown
 # Run standard bedtime automation (closes apps at 22:00 and shuts down)
 gtfb
 ```
+
+For detailed platform prerequisites (Linux AppIndicator packages, macOS permissions, Windows specifics), see [docs/cross-platform.md](docs/cross-platform.md).
 
 ### Running Tests
 

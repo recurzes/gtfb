@@ -1,5 +1,6 @@
 """Process management and graceful application closing utilities."""
 
+import logging
 import os
 import random
 import time
@@ -22,10 +23,7 @@ from gtfb.core.platform_utils import (
     is_gui_application,
 )
 
-if CURRENT_OS == "Windows" and PYWIN32_AVAILABLE:
-    import win32con
-    import win32gui
-    import win32process
+logger = logging.getLogger("gtfb.core.closer")
 
 
 def close_application_gracefully_windows(proc: psutil.Process, window_title: Optional[str] = None) -> bool:
@@ -38,6 +36,10 @@ def close_application_gracefully_windows(proc: psutil.Process, window_title: Opt
         return False
 
     try:
+        import win32con
+        import win32gui
+        import win32process
+
         def find_window_callback(hwnd: int, target_pid: int) -> bool:
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             if pid == target_pid:
@@ -48,7 +50,8 @@ def close_application_gracefully_windows(proc: psutil.Process, window_title: Opt
 
         win32gui.EnumWindows(lambda hwnd, pid: find_window_callback(hwnd, pid), proc.pid)
         return True
-    except Exception:
+    except Exception as e:
+        logger.debug("WM_CLOSE failed for PID %s (%s): %s", proc.pid, window_title, e)
         proc.terminate()
         return False
 
