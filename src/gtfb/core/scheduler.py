@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Optional, Tuple
 
 from gtfb.config import DEFAULT_TARGET_HOUR, DEFAULT_TARGET_MINUTE
+from gtfb.config.models import ConfigProfile
 from gtfb.core.closer import (
     check_privileges,
     close_gui_applications,
@@ -54,9 +55,11 @@ class BedtimeScheduler:
         shutdown: bool = False,
         check_interval: float = 1.0,
         closer_fn: Optional[Callable[..., Any]] = None,
+        enabled: bool = True,
     ) -> None:
         self.target_hour = target_hour
         self.target_minute = target_minute
+        self.enabled = enabled
         self.dry_run = dry_run
         self.shutdown = shutdown
         self.check_interval = check_interval
@@ -65,6 +68,24 @@ class BedtimeScheduler:
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._state: SchedulerState = SchedulerState.STOPPED
+
+    def update_config(self, new_config: ConfigProfile) -> None:
+        """Update scheduler target hour, minute, and enabled status in-memory.
+
+        Args:
+            new_config: Updated ConfigProfile containing app_close_schedule.
+        """
+        with self._lock:
+            schedule = new_config.app_close_schedule
+            self.target_hour = schedule.target_hour
+            self.target_minute = schedule.target_minute
+            self.enabled = schedule.enabled
+            logger.info(
+                "Scheduler updated in-memory: Bedtime set to %02d:%02d (enabled=%s)",
+                self.target_hour,
+                self.target_minute,
+                self.enabled,
+            )
 
     @property
     def state(self) -> SchedulerState:
@@ -152,26 +173,40 @@ class BedtimeScheduler:
     def _run_loop(self) -> None:
         """Worker loop executing the bedtime countdown."""
         logger.info("Bedtime scheduler worker loop running.")
+        last_hour = self.target_hour
+        last_minute = self.target_minute
         target_time = self.get_next_target()
         logger.info("Next scheduled bedtime target: %s", target_time.strftime("%Y-%m-%d %H:%M:%S"))
 
         while not self._stop_event.is_set():
+            if self.target_hour != last_hour or self.target_minute != last_minute:
+                last_hour = self.target_hour
+                last_minute = self.target_minute
+                target_time = self.get_next_target()
+                logger.info(
+                    "Bedtime target updated in loop: %s",
+                    target_time.strftime("%Y-%m-%d %H:%M:%S"),
+                )
+
             now = datetime.now()
             time_remaining = (target_time - now).total_seconds()
 
             if time_remaining <= 0:
-                self._state = SchedulerState.ENFORCING
-                logger.warning("Bedtime reached! Executing application closing routine.")
-                try:
-                    self.closer_fn(dry_run=self.dry_run)
-                except TypeError:
-                    self.closer_fn()
-                except Exception as err:
-                    logger.exception("Error executing bedtime closer routine: %s", err)
+                if self.enabled:
+                    self._state = SchedulerState.ENFORCING
+                    logger.warning("Bedtime reached! Executing application closing routine.")
+                    try:
+                        self.closer_fn(dry_run=self.dry_run)
+                    except TypeError:
+                        self.closer_fn()
+                    except Exception as err:
+                        logger.exception("Error executing bedtime closer routine: %s", err)
 
-                if self.shutdown and not self.dry_run:
-                    logger.info("Initiating scheduled system shutdown...")
-                    shutdown_system(target_hour=self.target_hour, target_minute=self.target_minute)
+                    if self.shutdown and not self.dry_run:
+                        logger.info("Initiating scheduled system shutdown...")
+                        shutdown_system(target_hour=self.target_hour, target_minute=self.target_minute)
+                else:
+                    logger.info("Bedtime reached but enforcement is disabled in config.")
                 break
 
             self._stop_event.wait(timeout=self.check_interval)
