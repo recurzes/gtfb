@@ -1,12 +1,12 @@
-"""Unit tests for SettingsWindow UI component and BedtimeSection."""
+"""Unit tests for SettingsWindow UI component, BedtimeSection, and BlocklistSection."""
 
 import threading
 import tkinter as tk
 import unittest
 from unittest.mock import MagicMock, patch
 
-from gtfb.config.models import AppCloseSchedule, ConfigProfile
-from gtfb.ui.settings_window import BedtimeSection, SettingsWindow
+from gtfb.config.models import AppCloseSchedule, BlockRule, ConfigProfile
+from gtfb.ui.settings_window import BedtimeSection, BlocklistSection, SettingsWindow
 
 
 class TestBedtimeSection(unittest.TestCase):
@@ -156,6 +156,103 @@ class TestBedtimeSection(unittest.TestCase):
         self.assertIn("Grace period must be a non-negative integer", str(ctx.exception))
 
 
+class TestBlocklistSection(unittest.TestCase):
+    """Test suite for BlocklistSection widget domain listing, adding, and removing."""
+
+    def setUp(self):
+        self.root = tk.Tk()
+        self.root.withdraw()
+
+    def tearDown(self):
+        if self.root:
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
+
+    def test_blocklist_section_initialization_with_domains(self):
+        initial = ["reddit.com", "youtube.com"]
+        section = BlocklistSection(self.root, initial_domains=initial)
+
+        self.assertEqual(section.domains, ["reddit.com", "youtube.com"])
+        self.assertEqual(section.listbox.size(), 2)
+        self.assertEqual(section.listbox.get(0), "reddit.com")
+        self.assertEqual(section.listbox.get(1), "youtube.com")
+        self.assertEqual(section.get_domains(), ["reddit.com", "youtube.com"])
+
+    def test_blocklist_section_initialization_with_config(self):
+        config = ConfigProfile(
+            block_rules=[BlockRule(domains=["github.com", "news.ycombinator.com"])]
+        )
+        section = BlocklistSection(self.root, config=config)
+
+        self.assertEqual(section.domains, ["github.com", "news.ycombinator.com"])
+        self.assertEqual(section.listbox.size(), 2)
+        self.assertEqual(section.get_domains(), ["github.com", "news.ycombinator.com"])
+
+    def test_blocklist_section_empty_initialization(self):
+        section = BlocklistSection(self.root)
+        self.assertEqual(section.domains, [])
+        self.assertEqual(section.listbox.size(), 0)
+        self.assertEqual(section.get_domains(), [])
+
+    def test_blocklist_add_domain_sanitized(self):
+        section = BlocklistSection(self.root, initial_domains=["reddit.com"])
+
+        section.entry_domain.insert(0, "  https://WWW.YouTube.com/feed  ")
+        section.on_add()
+
+        self.assertEqual(section.domains, ["reddit.com", "youtube.com"])
+        self.assertEqual(section.listbox.size(), 2)
+        self.assertEqual(section.listbox.get(1), "youtube.com")
+        self.assertEqual(section.entry_domain.get(), "")
+
+    def test_blocklist_add_domain_duplicate_prevention(self):
+        section = BlocklistSection(self.root, initial_domains=["reddit.com"])
+
+        section.entry_domain.insert(0, "https://www.reddit.com/r/all")
+        with patch("tkinter.messagebox.showwarning") as mock_warn:
+            section.on_add()
+            mock_warn.assert_called_once_with(
+                "Duplicate", "'reddit.com' is already in the blocklist."
+            )
+
+        self.assertEqual(section.domains, ["reddit.com"])
+        self.assertEqual(section.listbox.size(), 1)
+
+    def test_blocklist_add_domain_empty_noop(self):
+        section = BlocklistSection(self.root, initial_domains=["reddit.com"])
+
+        section.entry_domain.insert(0, "   ")
+        section.on_add()
+
+        self.assertEqual(section.domains, ["reddit.com"])
+        self.assertEqual(section.listbox.size(), 1)
+
+    def test_blocklist_remove_selected_domain(self):
+        section = BlocklistSection(
+            self.root, initial_domains=["reddit.com", "youtube.com", "x.com"]
+        )
+
+        # Select second item (index 1: youtube.com)
+        section.listbox.selection_set(1)
+        section.on_remove()
+
+        self.assertEqual(section.domains, ["reddit.com", "x.com"])
+        self.assertEqual(section.listbox.size(), 2)
+        self.assertEqual(section.listbox.get(0), "reddit.com")
+        self.assertEqual(section.listbox.get(1), "x.com")
+
+    def test_blocklist_remove_nothing_selected_noop(self):
+        section = BlocklistSection(self.root, initial_domains=["reddit.com", "youtube.com"])
+
+        section.listbox.selection_clear(0, tk.END)
+        section.on_remove()
+
+        self.assertEqual(section.domains, ["reddit.com", "youtube.com"])
+        self.assertEqual(section.listbox.size(), 2)
+
+
 class TestSettingsWindow(unittest.TestCase):
     """Test suite for SettingsWindow lifecycle, singleton pattern, and events."""
 
@@ -257,7 +354,7 @@ class TestSettingsWindow(unittest.TestCase):
         window = SettingsWindow()
         window.root = mock_root
 
-        window._center_window(480, 420)
+        window._center_window(480, 580)
         mock_root.eval.assert_called_once_with("tk::PlaceWindow . center")
 
     def test_center_window_eval_fallback(self):
@@ -269,10 +366,10 @@ class TestSettingsWindow(unittest.TestCase):
         window = SettingsWindow()
         window.root = mock_root
 
-        window._center_window(480, 420)
+        window._center_window(480, 580)
         mock_root.update_idletasks.assert_called_once()
-        # x = (1920-480)/2 = 720, y = (1080-420)/2 = 330
-        mock_root.geometry.assert_called_once_with("480x420+720+330")
+        # x = (1920-480)/2 = 720, y = (1080-580)/2 = 250
+        mock_root.geometry.assert_called_once_with("480x580+720+250")
 
     def test_set_window_icon_with_mocked_asset(self):
         mock_root = MagicMock()
@@ -304,9 +401,10 @@ class TestSettingsWindow(unittest.TestCase):
             instance = SettingsWindow.open_or_focus(config=custom_config)
             self.assertEqual(instance.config, custom_config)
 
-    def test_create_window_creates_bedtime_section(self):
+    def test_create_window_creates_sections(self):
         custom_config = ConfigProfile(
-            app_close_schedule=AppCloseSchedule(target_hour=23, target_minute=30)
+            app_close_schedule=AppCloseSchedule(target_hour=23, target_minute=30),
+            block_rules=[BlockRule(domains=["example.com", "custom.org"])],
         )
         window = SettingsWindow(config=custom_config)
         with patch.object(tk.Tk, "mainloop"):
@@ -315,6 +413,12 @@ class TestSettingsWindow(unittest.TestCase):
                 self.assertIsNotNone(window.bedtime_section)
                 self.assertEqual(int(window.bedtime_section.var_hour.get()), 23)
                 self.assertEqual(int(window.bedtime_section.var_minute.get()), 30)
+
+                self.assertIsNotNone(window.blocklist_section)
+                self.assertEqual(
+                    window.blocklist_section.get_domains(),
+                    ["example.com", "custom.org"],
+                )
             finally:
                 window._on_close()
 
