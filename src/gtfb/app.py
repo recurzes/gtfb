@@ -6,6 +6,7 @@ import sys
 from gtfb import __version__
 from gtfb.config import DEFAULT_TARGET_HOUR, DEFAULT_TARGET_MINUTE
 from gtfb.core.scheduler import run_scheduler_cli
+from gtfb.ui.tray import TrayApp
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,6 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--version",
         action="version",
         version=f"gtfb {__version__}",
+    )
+    parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Run in foreground CLI mode instead of system tray application.",
     )
     parser.add_argument(
         "--hour",
@@ -49,19 +55,30 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    if args.cli or args.dry_run:
+        try:
+            run_scheduler_cli(
+                target_hour=args.hour,
+                target_minute=args.minute,
+                shutdown=not args.no_shutdown,
+                dry_run=args.dry_run,
+            )
+            return 0
+        except KeyboardInterrupt:
+            print("\nOperation cancelled by user.")
+            return 130
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
     try:
-        run_scheduler_cli(
-            target_hour=args.hour,
-            target_minute=args.minute,
-            shutdown=not args.no_shutdown,
-            dry_run=args.dry_run,
-        )
+        app = TrayApp()
+        app.run()
         return 0
     except KeyboardInterrupt:
-        print("\nOperation cancelled by user.")
         return 130
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Error starting GTFB tray app: {e}", file=sys.stderr)
         return 1
 
 
