@@ -1,6 +1,8 @@
+"""Default constants and logging configuration for GTFB."""
+
 import logging
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 DEFAULT_TARGET_HOUR: int = 22
 DEFAULT_TARGET_MINUTE: int = 0
@@ -36,7 +38,7 @@ def setup_logging(
 
 
 # Processes that should never be identified or closed as user GUI applications
-SYSTEM_EXCLUDED_PROCESSES: list[str] = [
+SYSTEM_EXCLUDED_PROCESSES: List[str] = [
     "system",
     "registry",
     "csrss.exe",
@@ -59,7 +61,7 @@ SYSTEM_EXCLUDED_PROCESSES: list[str] = [
 ]
 
 # Common Linux GUI application keywords/patterns
-LINUX_GUI_PATTERNS: list[str] = [
+LINUX_GUI_PATTERNS: List[str] = [
     "chrome",
     "firefox",
     "brave",
@@ -100,7 +102,7 @@ LINUX_GUI_PATTERNS: list[str] = [
 ]
 
 # Common macOS GUI application keywords/patterns
-MACOS_GUI_PATTERNS: list[str] = [
+MACOS_GUI_PATTERNS: List[str] = [
     "safari",
     "chrome",
     "firefox",
