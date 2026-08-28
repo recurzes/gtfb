@@ -14,6 +14,7 @@ class GTFBRequestHandler(BaseHTTPRequestHandler):
     """Base request handler for GTFB embedded localhost API with CORS support."""
 
     config_provider: Optional[Callable[[], Any]] = None
+    status_store: Optional[Any] = None
 
     def _send_cors_headers(self) -> None:
         """Attach standard Cross-Origin Resource Sharing (CORS) headers."""
@@ -79,6 +80,53 @@ class GTFBRequestHandler(BaseHTTPRequestHandler):
                         "message": str(err),
                     },
                 )
+        else:
+            self._send_json_response(404, {"error": "Not Found", "path": self.path})
+
+    def do_POST(self) -> None:
+        """Handle incoming HTTP POST requests."""
+        parsed = urlparse(self.path)
+        if parsed.path == "/status":
+            try:
+                content_length_header = self.headers.get("Content-Length")
+                if content_length_header is None:
+                    self._send_json_response(400, {"error": "Missing Content-Length header"})
+                    return
+
+                try:
+                    content_length = int(content_length_header)
+                except ValueError:
+                    self._send_json_response(400, {"error": "Invalid Content-Length header"})
+                    return
+
+                if content_length < 0:
+                    self._send_json_response(400, {"error": "Invalid Content-Length"})
+                    return
+
+                if content_length > 65536:
+                    self._send_json_response(413, {"error": "Payload too large"})
+                    return
+
+                body = self.rfile.read(content_length).decode("utf-8")
+                payload = json.loads(body)
+
+                if not isinstance(payload, dict):
+                    self._send_json_response(400, {"error": "Invalid JSON payload: root must be an object"})
+                    return
+
+                store = (
+                    getattr(self.server, "status_store", None)
+                    or self.status_store
+                )
+                if store is not None:
+                    store.update_status(payload)
+
+                self._send_json_response(200, {"status": "received"})
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._send_json_response(400, {"error": "Invalid JSON"})
+            except Exception as err:
+                logger.exception("Error processing /status POST request: %s", err)
+                self._send_json_response(500, {"error": str(err)})
         else:
             self._send_json_response(404, {"error": "Not Found", "path": self.path})
 
