@@ -61,10 +61,7 @@ def load_tray_icon(icon_path: Optional[Path | str] = None) -> Image.Image:
 
 def create_menu(app_instance: "TrayApp") -> Menu:
     """Construct the system tray context menu."""
-    return Menu(
-        item("GTFB — Idle", None, enabled=False),
-        item("Quit", app_instance.on_quit),
-    )
+    return app_instance.build_menu()
 
 
 class TrayApp:
@@ -93,7 +90,54 @@ class TrayApp:
 
     def _create_menu(self) -> Menu:
         """Create tray context menu."""
-        return create_menu(self)
+        return self.build_menu()
+
+    def is_scheduler_running(self, item: Optional[pystray.MenuItem] = None) -> bool:
+        """Return True if the bedtime scheduler is active and running."""
+        return self.scheduler.is_running() if self.scheduler else False
+
+    def is_scheduler_stopped(self, item: Optional[pystray.MenuItem] = None) -> bool:
+        """Return True if the bedtime scheduler is currently stopped."""
+        return not self.is_scheduler_running(item)
+
+    def on_start(self, icon: Optional[pystray.Icon] = None, item: Optional[pystray.MenuItem] = None) -> None:
+        """Handle Start Scheduler menu action."""
+        logger.info("Starting scheduler from tray menu...")
+        if self.scheduler:
+            self.scheduler.start()
+        if self.icon:
+            self.icon.update_menu()
+
+    def on_stop(self, icon: Optional[pystray.Icon] = None, item: Optional[pystray.MenuItem] = None) -> None:
+        """Handle Stop Scheduler menu action."""
+        logger.info("Stopping scheduler from tray menu...")
+        if self.scheduler:
+            self.scheduler.stop()
+        if self.icon:
+            self.icon.update_menu()
+
+    def build_menu(self) -> Menu:
+        """Construct dynamic tray context menu."""
+        return Menu(
+            item(
+                lambda text: f"Status: {'Running' if self.is_scheduler_running() else 'Stopped'}",
+                None,
+                enabled=False,
+            ),
+            Menu.SEPARATOR,
+            item(
+                "Start Scheduler",
+                self.on_start,
+                visible=lambda item: not self.is_scheduler_running(),
+            ),
+            item(
+                "Stop Scheduler",
+                self.on_stop,
+                visible=lambda item: self.is_scheduler_running(),
+            ),
+            Menu.SEPARATOR,
+            item("Quit", self.on_quit),
+        )
 
     def run(self, setup: Optional[Callable[[pystray.Icon], None]] = None) -> None:
         """Start the bedtime scheduler and system tray event loop."""
