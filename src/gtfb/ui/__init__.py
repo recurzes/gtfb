@@ -7,12 +7,13 @@ from gtfb.ui.icons import (
     get_icon,
     load_tray_icon,
 )
-from gtfb.ui.settings_window import BedtimeSection, SettingsWindow
+from gtfb.ui.settings_window import BedtimeSection, BlocklistSection, SettingsWindow
 from gtfb.ui.tray import TrayApp
 
 __all__ = [
     "STATE_COLORS",
     "BedtimeSection",
+    "BlocklistSection",
     "SettingsWindow",
     "TrayApp",
     "create_state_icon",

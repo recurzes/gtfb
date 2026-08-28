@@ -4,10 +4,11 @@ import logging
 from pathlib import Path
 import threading
 import tkinter as tk
-from tkinter import ttk
-from typing import Any, Callable, Dict, Optional
+from tkinter import messagebox, ttk
+from typing import Any, Callable, Dict, List, Optional
 
 from gtfb.config.models import ConfigProfile
+from gtfb.config.sanitizer import clean_domain_input
 from gtfb.config.storage import load_config
 
 logger = logging.getLogger("gtfb.ui.settings")
@@ -130,6 +131,82 @@ class BedtimeSection(ttk.LabelFrame):
         return res
 
 
+class BlocklistSection(ttk.LabelFrame):
+    """UI Section for viewing, adding, and removing blocked website domains."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        initial_domains: Optional[List[str]] = None,
+        config: Optional[ConfigProfile] = None,
+    ) -> None:
+        super().__init__(parent, text="Website Blocklist", padding="12")
+        if initial_domains is not None:
+            self.domains: List[str] = list(initial_domains)
+        elif config is not None and config.block_rules and len(config.block_rules) > 0:
+            self.domains = list(config.block_rules[0].domains)
+        else:
+            self.domains = []
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        """Construct input field, listbox with scrollbar, and action buttons."""
+        # Entry + Add row
+        entry_frame = ttk.Frame(self)
+        entry_frame.pack(fill=tk.X, pady=(0, 8))
+
+        self.entry_domain = ttk.Entry(entry_frame)
+        self.entry_domain.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        self.entry_domain.bind("<Return>", lambda e: self.on_add())
+
+        self.btn_add = ttk.Button(entry_frame, text="Add Domain", command=self.on_add)
+        self.btn_add.pack(side=tk.RIGHT)
+
+        # Listbox with Scrollbar
+        list_frame = ttk.Frame(self)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.listbox = tk.Listbox(list_frame, height=8, selectmode=tk.SINGLE)
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
+        self.listbox.configure(yscrollcommand=scrollbar.set)
+
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        for d in self.domains:
+            self.listbox.insert(tk.END, d)
+
+        # Remove button
+        self.btn_remove = ttk.Button(self, text="Remove Selected", command=self.on_remove)
+        self.btn_remove.pack(anchor="e", pady=(6, 0))
+
+    def on_add(self) -> None:
+        """Sanitize domain input, validate duplicates, and append to domain list."""
+        raw = self.entry_domain.get()
+        cleaned = clean_domain_input(raw)
+        if not cleaned:
+            return
+        if cleaned in self.domains:
+            messagebox.showwarning("Duplicate", f"'{cleaned}' is already in the blocklist.")
+            return
+        self.domains.append(cleaned)
+        self.listbox.insert(tk.END, cleaned)
+        self.entry_domain.delete(0, tk.END)
+
+    def on_remove(self) -> None:
+        """Remove currently selected domain from the listbox and internal state."""
+        selected_idx = self.listbox.curselection()
+        if not selected_idx:
+            return
+        idx = selected_idx[0]
+        self.domains.pop(idx)
+        self.listbox.delete(idx)
+
+    def get_domains(self) -> List[str]:
+        """Return the current list of blocked domains."""
+        return list(self.domains)
+
+
 class SettingsWindow:
     """GTFB Desktop Settings Window (Singleton)."""
 
@@ -146,6 +223,7 @@ class SettingsWindow:
         self.root: Optional[tk.Tk] = None
         self._icon_img: Optional[tk.PhotoImage] = None
         self.bedtime_section: Optional[BedtimeSection] = None
+        self.blocklist_section: Optional[BlocklistSection] = None
 
     @classmethod
     def get_instance(cls) -> Optional["SettingsWindow"]:
@@ -198,7 +276,7 @@ class SettingsWindow:
         except Exception as err:
             logger.debug("Could not set window icon: %s", err)
 
-    def _center_window(self, width: int = 480, height: int = 420) -> None:
+    def _center_window(self, width: int = 480, height: int = 580) -> None:
         """Center the window on screen."""
         if not self.root:
             return
@@ -220,11 +298,11 @@ class SettingsWindow:
         try:
             self.root = tk.Tk()
             self.root.title("GTFB — Settings")
-            self.root.geometry("480x420")
+            self.root.geometry("480x580")
             self.root.resizable(False, False)
 
             self._set_window_icon()
-            self._center_window(480, 420)
+            self._center_window(480, 580)
 
             # Bind close window protocol
             self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -244,6 +322,15 @@ class SettingsWindow:
             # Bedtime section
             self.bedtime_section = BedtimeSection(main_frame, config=self.config)
             self.bedtime_section.pack(fill=tk.X, pady=(0, 12))
+
+            # Website blocklist section
+            initial_domains = (
+                self.config.block_rules[0].domains
+                if (self.config.block_rules and len(self.config.block_rules) > 0)
+                else []
+            )
+            self.blocklist_section = BlocklistSection(main_frame, initial_domains=initial_domains)
+            self.blocklist_section.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
 
             self.root.mainloop()
         except Exception as err:
