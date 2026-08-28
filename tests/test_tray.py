@@ -60,15 +60,31 @@ class TestTrayMenuAndApp(unittest.TestCase):
     def test_tray_app_initialization(self):
         app = TrayApp()
         self.assertIsNotNone(app.icon)
+        self.assertIsNotNone(app.scheduler)
         self.assertEqual(app.icon.title, "GTFB - Anti-Distraction Suite")
         self.assertEqual(app.icon.name, "gtfb")
 
+    def test_tray_app_initialization_with_custom_scheduler(self):
+        mock_scheduler = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler)
+        self.assertEqual(app.scheduler, mock_scheduler)
+
+    def test_tray_app_run_starts_scheduler(self):
+        mock_scheduler = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler)
+        with patch.object(app.icon, "run") as mock_run:
+            app.run()
+            mock_scheduler.start.assert_called_once()
+            mock_run.assert_called_once()
+
     def test_tray_app_on_quit_calls_callback_and_stops_icon(self):
         quit_callback = MagicMock()
-        app = TrayApp(on_quit=quit_callback)
-        
+        mock_scheduler = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler, on_quit=quit_callback)
+
         with patch.object(app.icon, "stop") as mock_stop:
             app.on_quit()
+            mock_scheduler.stop.assert_called_once()
             quit_callback.assert_called_once()
             mock_stop.assert_called_once()
 
@@ -78,6 +94,7 @@ class TestTrayMenuAndApp(unittest.TestCase):
         with patch.object(app, "on_quit") as mock_on_quit:
             app.stop()
             mock_on_quit.assert_called_once()
+
 
 
 class TestAppParserCliFlag(unittest.TestCase):

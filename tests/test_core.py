@@ -33,6 +33,12 @@ class TestPackageStructure(unittest.TestCase):
         self.assertGreater(DEFAULT_GRACE_PERIOD_SECONDS, 0)
         self.assertGreater(DEFAULT_SHUTDOWN_DELAY_SECONDS, 0)
 
+    def test_closer_dry_run_returns_list(self):
+        from gtfb.core.closer import close_gui_apps
+        apps = close_gui_apps(dry_run=True)
+        self.assertIsInstance(apps, list)
+
+
 
 class TestSchedulerLogic(unittest.TestCase):
     """Test scheduler delay calculation."""
