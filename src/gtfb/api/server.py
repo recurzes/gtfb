@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import ipaddress
 import logging
 import threading
-from typing import Optional, Type
+from typing import Any, Callable, Optional, Type
 
 from gtfb.api.handler import GTFBRequestHandler
 
@@ -32,6 +32,7 @@ class APIServer:
         host: str = "127.0.0.1",
         port: int = DEFAULT_PORT,
         handler_cls: Type[BaseHTTPRequestHandler] = GTFBRequestHandler,
+        config_provider: Optional[Callable[[], Any]] = None,
     ) -> None:
         if not _is_loopback_host(host):
             raise ValueError(
@@ -40,6 +41,7 @@ class APIServer:
         self.host = host
         self.port = port
         self.handler_cls = handler_cls
+        self.config_provider = config_provider
         self.server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -55,6 +57,8 @@ class APIServer:
             return
 
         self.server = HTTPServer((self.host, self.port), self.handler_cls)
+        if self.config_provider is not None:
+            self.server.config_provider = self.config_provider
         self._thread = threading.Thread(
             target=self.server.serve_forever,
             name="APIServerThread",
