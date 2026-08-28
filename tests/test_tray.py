@@ -217,22 +217,26 @@ class TestTrayMenuAndApp(unittest.TestCase):
         mock_scheduler = MagicMock()
         mock_scheduler.state = "COUNTING_DOWN"
         mock_scheduler.get_status_detail.return_value = "Bedtime at 22:00 — 45m remaining"
-        app = TrayApp(scheduler=mock_scheduler)
+        mock_api = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler, api_server=mock_api)
         with patch.object(app.icon, "run") as mock_run, \
              patch.object(app, "_start_status_updater") as mock_updater:
             app.run()
             mock_scheduler.start.assert_called_once()
+            mock_api.start.assert_called_once()
             mock_updater.assert_called_once()
             mock_run.assert_called_once()
 
     def test_tray_app_on_quit_calls_callback_and_stops_icon(self):
         quit_callback = MagicMock()
         mock_scheduler = MagicMock()
-        app = TrayApp(scheduler=mock_scheduler, on_quit=quit_callback)
+        mock_api = MagicMock()
+        app = TrayApp(scheduler=mock_scheduler, on_quit=quit_callback, api_server=mock_api)
 
         with patch.object(app.icon, "stop") as mock_stop:
             app.on_quit()
             mock_scheduler.stop.assert_called_once()
+            mock_api.stop.assert_called_once()
             quit_callback.assert_called_once()
             mock_stop.assert_called_once()
 
