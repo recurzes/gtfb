@@ -1,5 +1,6 @@
 """Bedtime countdown, delay calculation, and scheduling loop."""
 
+from enum import Enum
 import logging
 import threading
 import time
@@ -17,6 +18,14 @@ from gtfb.core.closer import (
 from gtfb.core.platform_utils import CURRENT_OS, PYWIN32_AVAILABLE
 
 logger = logging.getLogger("gtfb.core.scheduler")
+
+
+class SchedulerState(str, Enum):
+    """Application scheduler operational states."""
+
+    STOPPED = "STOPPED"
+    COUNTING_DOWN = "COUNTING_DOWN"
+    ENFORCING = "ENFORCING"
 
 
 def calculate_delay(target_hour: int = DEFAULT_TARGET_HOUR, target_minute: int = DEFAULT_TARGET_MINUTE) -> Tuple[float, datetime]:
@@ -55,6 +64,50 @@ class BedtimeScheduler:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._state: SchedulerState = SchedulerState.STOPPED
+
+    @property
+    def state(self) -> SchedulerState:
+        """Return the current scheduler state."""
+        if self._stop_event.is_set():
+            return SchedulerState.STOPPED
+        if self._state == SchedulerState.ENFORCING:
+            return SchedulerState.ENFORCING
+        if self.is_running():
+            return SchedulerState.COUNTING_DOWN
+        return SchedulerState.STOPPED
+
+    def get_time_remaining(self) -> float:
+        """Return remaining seconds until next bedtime target if counting down, otherwise 0.0."""
+        if self.is_running() and self.state == SchedulerState.COUNTING_DOWN:
+            target = self.get_next_target()
+            diff = (target - datetime.now()).total_seconds()
+            return max(0.0, diff)
+        return 0.0
+
+    def get_formatted_remaining(self) -> str:
+        """Format the remaining countdown duration into human-readable text."""
+        rem = self.get_time_remaining()
+        if rem <= 0:
+            return "0s remaining"
+        hours = int(rem // 3600)
+        minutes = int((rem % 3600) // 60)
+        seconds = int(rem % 60)
+        if hours > 0:
+            return f"{hours}h {minutes}m remaining"
+        elif minutes > 0:
+            return f"{minutes}m remaining"
+        else:
+            return f"{seconds}s remaining"
+
+    def get_status_detail(self) -> str:
+        """Return a descriptive status string suitable for tray tooltips or status displays."""
+        current_state = self.state
+        if current_state == SchedulerState.COUNTING_DOWN:
+            return f"Bedtime at {self.target_hour:02d}:{self.target_minute:02d} — {self.get_formatted_remaining()}"
+        elif current_state == SchedulerState.ENFORCING:
+            return "Bedtime enforcement active"
+        return ""
 
     def get_next_target(self) -> datetime:
         """Calculate the next target datetime based on target_hour and target_minute."""
@@ -76,6 +129,7 @@ class BedtimeScheduler:
                 return
 
             self._stop_event.clear()
+            self._state = SchedulerState.COUNTING_DOWN
             self._thread = threading.Thread(target=self._run_loop, name="SchedulerWorker", daemon=True)
             self._thread.start()
             logger.info(
@@ -90,6 +144,7 @@ class BedtimeScheduler:
         """Signal the worker thread to stop and wait for it to join."""
         with self._lock:
             self._stop_event.set()
+            self._state = SchedulerState.STOPPED
             if self._thread is not None and self._thread.is_alive():
                 self._thread.join(timeout=timeout)
                 logger.info("Bedtime scheduler worker stopped.")
@@ -105,6 +160,7 @@ class BedtimeScheduler:
             time_remaining = (target_time - now).total_seconds()
 
             if time_remaining <= 0:
+                self._state = SchedulerState.ENFORCING
                 logger.warning("Bedtime reached! Executing application closing routine.")
                 try:
                     self.closer_fn(dry_run=self.dry_run)
@@ -119,6 +175,7 @@ class BedtimeScheduler:
                 break
 
             self._stop_event.wait(timeout=self.check_interval)
+
 
 
 

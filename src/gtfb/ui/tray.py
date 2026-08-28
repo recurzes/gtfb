@@ -1,62 +1,25 @@
 """System tray application runner using pystray and Pillow."""
 
+from enum import Enum
 import logging
 from pathlib import Path
-from typing import Callable, Optional
+import threading
+from typing import Callable, Optional, Union
 
-from PIL import Image, ImageDraw
+from PIL import Image
 import pystray
 from pystray import Menu, MenuItem as item
 
-from gtfb.core.scheduler import BedtimeScheduler
+from gtfb.core.scheduler import BedtimeScheduler, SchedulerState
+from gtfb.ui.icons import (
+    STATE_COLORS,
+    create_state_icon,
+    generate_fallback_icon,
+    get_icon,
+    load_tray_icon,
+)
 
 logger = logging.getLogger("gtfb.ui.tray")
-
-
-def generate_fallback_icon(width: int = 64, height: int = 64) -> Image.Image:
-    """Generate a dynamic fallback RGBA tray icon image.
-
-    Creates an anti-distraction emblem (dark circle badge with crescent moon)
-    to ensure the application never crashes due to missing asset files.
-    """
-    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-
-    # Base circular background
-    draw.ellipse([4, 4, width - 4, height - 4], fill=(30, 41, 59, 255), outline=(99, 102, 241, 255), width=2)
-
-    # Crescent moon emblem
-    draw.ellipse([18, 16, 46, 44], fill=(251, 191, 36, 255))
-    draw.ellipse([25, 12, 51, 40], fill=(30, 41, 59, 255))
-
-    # Star accent
-    draw.line([(45, 20), (45, 26)], fill=(253, 230, 138, 255), width=1)
-    draw.line([(42, 23), (48, 23)], fill=(253, 230, 138, 255), width=1)
-
-    return image
-
-
-def load_tray_icon(icon_path: Optional[Path | str] = None) -> Image.Image:
-    """Attempt to load a tray icon from file, falling back to dynamic generation."""
-    candidates = []
-    if icon_path:
-        candidates.append(Path(icon_path))
-
-    # Module-relative package asset path
-    candidates.append(Path(__file__).resolve().parent.parent / "assets" / "icon.png")
-    # Repository root asset path
-    candidates.append(Path("assets/icons/icon.png"))
-    candidates.append(Path("assets/icon.png"))
-
-    for path in candidates:
-        try:
-            if path.is_file():
-                return Image.open(path).convert("RGBA")
-        except Exception as err:
-            logger.warning("Failed loading icon from %s: %s", path, err)
-
-    logger.info("Using dynamically generated fallback tray icon")
-    return generate_fallback_icon()
 
 
 def create_menu(app_instance: "TrayApp") -> Menu:
@@ -69,28 +32,95 @@ class TrayApp:
 
     def __init__(
         self,
-        icon_path: Optional[Path | str] = None,
+        icon_path: Optional[Union[Path, str]] = None,
         scheduler: Optional[BedtimeScheduler] = None,
         on_quit: Optional[Callable[[], None]] = None,
     ) -> None:
+        self.icon_path = icon_path
         self.scheduler = scheduler or BedtimeScheduler()
         self.on_quit_callback = on_quit
-        self.icon_image = self._load_icon(icon_path)
+        self.current_state: str = "STOPPED"
+        self._updater_thread: Optional[threading.Thread] = None
+        self._updater_stop_event = threading.Event()
+
+        initial_state = self.scheduler.state if self.scheduler else SchedulerState.STOPPED
+        self.icon_image = self._load_icon(icon_path, state=initial_state)
         self.menu = self._create_menu()
         self.icon = pystray.Icon(
             name="gtfb",
             icon=self.icon_image,
-            title="GTFB - Anti-Distraction Suite",
+            title="GTFB: Stopped",
             menu=self.menu,
         )
+        self.update_tray_state(initial_state)
 
-    def _load_icon(self, icon_path: Optional[Path | str] = None) -> Image.Image:
-        """Load icon asset or generate fallback."""
-        return load_tray_icon(icon_path)
+    def _load_icon(
+        self,
+        icon_path: Optional[Union[Path, str]] = None,
+        state: Union[str, Enum] = SchedulerState.STOPPED,
+    ) -> Image.Image:
+        """Load icon asset for the given state or generate fallback."""
+        return get_icon(state=state, icon_path=icon_path)
 
     def _create_menu(self) -> Menu:
         """Create tray context menu."""
         return self.build_menu()
+
+    def update_tray_state(
+        self,
+        state: Optional[Union[str, Enum]] = None,
+        detail: Optional[str] = None,
+    ) -> None:
+        """Dynamically update tray icon image and tooltip title based on state.
+
+        Args:
+            state: Optional state override ('STOPPED', 'COUNTING_DOWN', 'ENFORCING').
+            detail: Optional status detail string (e.g. countdown time).
+        """
+        if state is None:
+            state = self.scheduler.state if self.scheduler else SchedulerState.STOPPED
+        if detail is None and self.scheduler:
+            detail = self.scheduler.get_status_detail()
+
+        state_key = state.value if isinstance(state, Enum) else str(state).upper()
+        self.current_state = state_key
+
+        if self.icon:
+            self.icon.icon = get_icon(state_key, icon_path=self.icon_path)
+            state_title = state_key.replace("_", " ").title()
+            if detail:
+                self.icon.title = f"GTFB: {state_title} ({detail})"
+            else:
+                self.icon.title = f"GTFB: {state_title}"
+
+    def _status_updater_loop(self) -> None:
+        """Background loop to periodically refresh tooltip countdown and icon state."""
+        while not self._updater_stop_event.is_set():
+            try:
+                self.update_tray_state()
+                if self.icon:
+                    self.icon.update_menu()
+            except Exception as err:
+                logger.debug("Error updating tray status: %s", err)
+            self._updater_stop_event.wait(timeout=1.0)
+
+    def _start_status_updater(self) -> None:
+        """Start the background status updater thread."""
+        if self._updater_thread and self._updater_thread.is_alive():
+            return
+        self._updater_stop_event.clear()
+        self._updater_thread = threading.Thread(
+            target=self._status_updater_loop,
+            name="TrayStatusUpdater",
+            daemon=True,
+        )
+        self._updater_thread.start()
+
+    def _stop_status_updater(self) -> None:
+        """Signal and join the background status updater thread."""
+        self._updater_stop_event.set()
+        if self._updater_thread and self._updater_thread.is_alive():
+            self._updater_thread.join(timeout=1.0)
 
     def is_scheduler_running(self, item: Optional[pystray.MenuItem] = None) -> bool:
         """Return True if the bedtime scheduler is active and running."""
@@ -105,6 +135,7 @@ class TrayApp:
         logger.info("Starting scheduler from tray menu...")
         if self.scheduler:
             self.scheduler.start()
+        self.update_tray_state()
         if self.icon:
             self.icon.update_menu()
 
@@ -113,6 +144,7 @@ class TrayApp:
         logger.info("Stopping scheduler from tray menu...")
         if self.scheduler:
             self.scheduler.stop()
+        self.update_tray_state()
         if self.icon:
             self.icon.update_menu()
 
@@ -140,15 +172,19 @@ class TrayApp:
         )
 
     def run(self, setup: Optional[Callable[[pystray.Icon], None]] = None) -> None:
-        """Start the bedtime scheduler and system tray event loop."""
+        """Start the bedtime scheduler, status updater, and system tray event loop."""
         logger.info("Starting GTFB system tray application...")
         if self.scheduler:
             self.scheduler.start()
+        self._start_status_updater()
+        self.update_tray_state()
         self.icon.run(setup=setup)
 
     def on_quit(self, icon: Optional[pystray.Icon] = None, item: Optional[item] = None) -> None:
         """Handle Quit menu action and stop the system tray icon."""
         logger.info("Shutting down GTFB system tray application...")
+        self._stop_status_updater()
+
         if self.scheduler:
             try:
                 self.scheduler.stop()
@@ -167,4 +203,3 @@ class TrayApp:
     def stop(self) -> None:
         """Programmatically stop the tray application."""
         self.on_quit()
-

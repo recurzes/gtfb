@@ -196,7 +196,63 @@ class TestBedtimeScheduler(unittest.TestCase):
         scheduler.stop(timeout=0.5)
         self.assertFalse(scheduler.is_running())
 
+    def test_scheduler_state_transitions(self):
+        """Test state property through STOPPED, COUNTING_DOWN, and ENFORCING states."""
+        mock_closer = MagicMock()
+        scheduler = BedtimeScheduler(check_interval=0.01, closer_fn=mock_closer)
+        self.assertEqual(scheduler.state, "STOPPED")
+
+        # Start countdown
+        scheduler.start()
+        self.assertEqual(scheduler.state, "COUNTING_DOWN")
+        scheduler.stop(timeout=0.5)
+        self.assertEqual(scheduler.state, "STOPPED")
+
+        # Trigger bedtime to enter ENFORCING
+        past_time = datetime.now() - timedelta(seconds=1)
+        with patch.object(scheduler, "get_next_target", return_value=past_time):
+            scheduler.start()
+            time.sleep(0.1)
+            self.assertEqual(scheduler.state, "ENFORCING")
+            scheduler.stop()
+            self.assertEqual(scheduler.state, "STOPPED")
+
+    def test_get_time_remaining_and_formatted_remaining(self):
+        scheduler = BedtimeScheduler(target_hour=22, target_minute=0)
+        # When stopped
+        self.assertEqual(scheduler.get_time_remaining(), 0.0)
+        self.assertEqual(scheduler.get_formatted_remaining(), "0s remaining")
+        self.assertEqual(scheduler.get_status_detail(), "")
+
+        # Mock target time in future while running
+        mock_target = datetime.now() + timedelta(hours=2, minutes=15, seconds=30)
+        with patch.object(scheduler, "is_running", return_value=True), \
+             patch.object(scheduler, "get_next_target", return_value=mock_target):
+            # Hours remaining format
+            self.assertGreater(scheduler.get_time_remaining(), 0)
+            self.assertEqual(scheduler.get_formatted_remaining(), "2h 15m remaining")
+            self.assertIn("Bedtime at 22:00 — 2h 15m remaining", scheduler.get_status_detail())
+
+        # Minutes remaining format (<1 hour)
+        mock_target_mins = datetime.now() + timedelta(minutes=42, seconds=10)
+        with patch.object(scheduler, "is_running", return_value=True), \
+             patch.object(scheduler, "get_next_target", return_value=mock_target_mins):
+            self.assertEqual(scheduler.get_formatted_remaining(), "42m remaining")
+            self.assertEqual(scheduler.get_status_detail(), "Bedtime at 22:00 — 42m remaining")
+
+        # Seconds remaining format (<1 minute)
+        mock_target_secs = datetime.now() + timedelta(seconds=45)
+        with patch.object(scheduler, "is_running", return_value=True), \
+             patch.object(scheduler, "get_next_target", return_value=mock_target_secs):
+            self.assertIn("s remaining", scheduler.get_formatted_remaining())
+
+        # Detail when enforcing
+        scheduler._state = "ENFORCING"
+        scheduler._stop_event.clear()
+        self.assertEqual(scheduler.get_status_detail(), "Bedtime enforcement active")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
