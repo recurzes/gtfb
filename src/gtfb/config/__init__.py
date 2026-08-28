@@ -21,7 +21,9 @@ from gtfb.config.storage import (
     get_config_dir,
     get_config_path,
     load_config,
+    load_config_resilient,
     save_config,
+    save_config_atomic,
 )
 
 __all__ = [
@@ -41,5 +43,7 @@ __all__ = [
     "get_config_dir",
     "get_config_path",
     "load_config",
+    "load_config_resilient",
     "save_config",
+    "save_config_atomic",
 ]
