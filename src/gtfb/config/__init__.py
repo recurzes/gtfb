@@ -17,6 +17,7 @@ from gtfb.config.models import (
     ConfigProfile,
     OverridePolicy,
 )
+from gtfb.config.sanitizer import clean_domain_input
 from gtfb.config.storage import (
     get_config_dir,
     get_config_path,
@@ -40,6 +41,7 @@ __all__ = [
     "BlockRule",
     "ConfigProfile",
     "OverridePolicy",
+    "clean_domain_input",
     "get_config_dir",
     "get_config_path",
     "load_config",
