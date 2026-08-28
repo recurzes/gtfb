@@ -23,11 +23,11 @@ class AppCloseSchedule:
         if not isinstance(data, dict):
             return cls()
         return cls(
-            target_hour=data.get("target_hour", 22),
-            target_minute=data.get("target_minute", 0),
-            enabled=data.get("enabled", True),
-            grace_period_seconds=data.get("grace_period_seconds", 15),
-            force_kill_after_grace=data.get("force_kill_after_grace", True),
+            target_hour=int(data.get("target_hour", 22)),
+            target_minute=int(data.get("target_minute", 0)),
+            enabled=bool(data.get("enabled", True)),
+            grace_period_seconds=int(data.get("grace_period_seconds", 15)),
+            force_kill_after_grace=bool(data.get("force_kill_after_grace", True)),
         )
 
 
@@ -64,14 +64,19 @@ class BlockRule:
         if not isinstance(data, dict):
             return cls()
         defaults = cls()
+        domains_raw = data.get("domains", defaults.domains)
+        if not isinstance(domains_raw, (list, tuple)):
+            raise ValueError(
+                f"BlockRule.domains must be a list, got {type(domains_raw).__name__}"
+            )
         return cls(
-            domains=list(data.get("domains", defaults.domains)),
-            trigger_type=data.get("trigger_type", "recurring"),
-            start_hour=data.get("start_hour", 22),
-            start_minute=data.get("start_minute", 0),
-            end_hour=data.get("end_hour", 6),
-            end_minute=data.get("end_minute", 0),
-            active=data.get("active", True),
+            domains=[str(d) for d in domains_raw],
+            trigger_type=str(data.get("trigger_type", "recurring")),
+            start_hour=int(data.get("start_hour", 22)),
+            start_minute=int(data.get("start_minute", 0)),
+            end_hour=int(data.get("end_hour", 6)),
+            end_minute=int(data.get("end_minute", 0)),
+            active=bool(data.get("active", True)),
         )
 
 
@@ -90,8 +95,8 @@ class OverridePolicy:
         if not isinstance(data, dict):
             return cls()
         return cls(
-            friction_type=data.get("friction_type", "none"),
-            cooldown_minutes=data.get("cooldown_minutes", 0),
+            friction_type=str(data.get("friction_type", "none")),
+            cooldown_minutes=int(data.get("cooldown_minutes", 0)),
         )
 
 
@@ -139,8 +144,8 @@ class ConfigProfile:
             override = OverridePolicy()
 
         return cls(
-            version=data.get("version", 1),
-            profile_name=data.get("profile_name", "Default"),
+            version=int(data.get("version", 1)),
+            profile_name=str(data.get("profile_name", "Default")),
             app_close_schedule=app_close,
             block_rules=block_rules,
             override_policy=override,
