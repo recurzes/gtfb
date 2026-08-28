@@ -7,6 +7,7 @@ import threading
 from typing import Any, Callable, Optional, Type
 
 from gtfb.api.handler import GTFBRequestHandler
+from gtfb.api.status_store import ExtensionStatusStore
 
 logger = logging.getLogger("gtfb.api")
 
@@ -33,6 +34,7 @@ class APIServer:
         port: int = DEFAULT_PORT,
         handler_cls: Type[BaseHTTPRequestHandler] = GTFBRequestHandler,
         config_provider: Optional[Callable[[], Any]] = None,
+        status_store: Optional[ExtensionStatusStore] = None,
     ) -> None:
         if not _is_loopback_host(host):
             raise ValueError(
@@ -42,6 +44,9 @@ class APIServer:
         self.port = port
         self.handler_cls = handler_cls
         self.config_provider = config_provider
+        self.status_store: ExtensionStatusStore = (
+            status_store if status_store is not None else ExtensionStatusStore()
+        )
         self.server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -59,6 +64,8 @@ class APIServer:
         self.server = HTTPServer((self.host, self.port), self.handler_cls)
         if self.config_provider is not None:
             self.server.config_provider = self.config_provider
+        if self.status_store is not None:
+            self.server.status_store = self.status_store
         self._thread = threading.Thread(
             target=self.server.serve_forever,
             name="APIServerThread",
