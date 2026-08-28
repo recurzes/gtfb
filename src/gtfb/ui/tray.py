@@ -11,6 +11,7 @@ import pystray
 from pystray import Menu, MenuItem as item
 
 from gtfb.api.server import APIServer
+from gtfb.api.status_store import ExtensionStatusStore
 from gtfb.config.models import ConfigProfile
 from gtfb.core.scheduler import BedtimeScheduler, SchedulerState
 from gtfb.ui.icons import (
@@ -40,15 +41,24 @@ class TrayApp:
         on_quit: Optional[Callable[[], None]] = None,
         api_server: Optional[APIServer] = None,
         config: Optional[ConfigProfile] = None,
+        status_store: Optional[ExtensionStatusStore] = None,
     ) -> None:
         self.icon_path = icon_path
         self.scheduler = scheduler or BedtimeScheduler()
         self.on_quit_callback = on_quit
         self.config = config
+        self.status_store = (
+            status_store
+            or (getattr(api_server, "status_store", None) if api_server else None)
+            or ExtensionStatusStore()
+        )
         self.api_server = (
             api_server
             if api_server is not None
-            else APIServer(config_provider=self.get_active_config)
+            else APIServer(
+                config_provider=self.get_active_config,
+                status_store=self.status_store,
+            )
         )
         self.current_state: str = "STOPPED"
         self._updater_thread: Optional[threading.Thread] = None
