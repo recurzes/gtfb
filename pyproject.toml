@@ -7,7 +7,7 @@ name = "gtfb"
 version = "0.1.0"
 description = "Get The F*** to Bed - Anti-distraction bedtime automation tool"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "pillow>=10.0.0",
     "psutil>=7.2.2",
