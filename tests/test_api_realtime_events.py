@@ -61,6 +61,8 @@ class TestAPIServerRealtimeEvents(unittest.TestCase):
         # Skip separator
         resp.fp.readline()
 
+        time.sleep(0.05)
+
         # Trigger config update broadcast
         new_profile = ConfigProfile()
         new_profile.block_rules = [BlockRule(domains=["newdomain.org", "test.io"])]

@@ -16,7 +16,12 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from gtfb.config.models import AppCloseSchedule, BlockRule, ConfigProfile
-from gtfb.ui.settings_window import BedtimeSection, BlocklistSection, SettingsWindow
+from gtfb.ui.settings_window import (
+    BedtimeSection,
+    BlocklistSection,
+    SettingsWindow,
+    StartupSection,
+)
 
 
 _shared_tk_root = None
@@ -288,6 +293,71 @@ class TestBlocklistSection(unittest.TestCase):
         self.assertEqual(section.listbox.size(), 2)
 
 
+class TestStartupSection(unittest.TestCase):
+    """Test suite for StartupSection widget and Windows startup shortcut toggling."""
+
+    def setUp(self):
+        self.root = get_shared_tk_root()
+
+    def tearDown(self):
+        if hasattr(self, "root") and self.root:
+            try:
+                for child in self.root.winfo_children():
+                    try:
+                        child.destroy()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    @patch("gtfb.core.platform_utils.is_startup_shortcut_installed", return_value=True)
+    def test_startup_section_initialization_windows_installed(self, mock_installed):
+        section = StartupSection(self.root)
+        self.assertTrue(section.var_startup.get())
+        self.assertEqual(str(section.chk_startup.cget("state")), "normal")
+        self.assertEqual(str(section.btn_open_folder.cget("state")), "normal")
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    @patch("gtfb.core.platform_utils.is_startup_shortcut_installed", return_value=False)
+    def test_startup_section_initialization_windows_not_installed(self, mock_installed):
+        section = StartupSection(self.root)
+        self.assertFalse(section.var_startup.get())
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Linux")
+    @patch("gtfb.core.platform_utils.is_startup_shortcut_installed", return_value=False)
+    def test_startup_section_initialization_non_windows_disabled(self, mock_installed):
+        section = StartupSection(self.root)
+        self.assertEqual(str(section.chk_startup.cget("state")), "disabled")
+        self.assertEqual(str(section.btn_open_folder.cget("state")), "disabled")
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    @patch("gtfb.core.platform_utils.create_startup_shortcut")
+    @patch("gtfb.core.platform_utils.is_startup_shortcut_installed", return_value=False)
+    def test_apply_changes_creates_shortcut_when_enabled(self, mock_installed, mock_create):
+        section = StartupSection(self.root)
+        section.var_startup.set(True)
+        section.apply_changes()
+        mock_create.assert_called_once()
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    @patch("gtfb.core.platform_utils.remove_startup_shortcut")
+    @patch("gtfb.core.platform_utils.is_startup_shortcut_installed", return_value=True)
+    def test_apply_changes_removes_shortcut_when_disabled(self, mock_installed, mock_remove):
+        section = StartupSection(self.root)
+        section.var_startup.set(False)
+        section.apply_changes()
+        mock_remove.assert_called_once()
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    @patch("gtfb.core.platform_utils.open_windows_startup_folder")
+    def test_on_open_folder_invokes_open(self, mock_open):
+        mock_open.return_value = True
+        section = StartupSection(self.root)
+        section.on_open_folder()
+        mock_open.assert_called_once()
+
+
 class TestSettingsWindow(unittest.TestCase):
     """Test suite for SettingsWindow lifecycle, singleton management, and UI building."""
 
@@ -465,6 +535,7 @@ class TestSettingsWindow(unittest.TestCase):
                     window.blocklist_section.get_domains(),
                     ["example.com", "custom.org"],
                 )
+                self.assertIsNotNone(window.startup_section)
             finally:
                 window._on_close()
 
