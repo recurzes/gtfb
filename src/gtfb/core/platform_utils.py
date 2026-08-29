@@ -3,10 +3,11 @@
 import ctypes
 import logging
 import os
+from pathlib import Path
 import platform
 import shutil
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import psutil
 
@@ -320,6 +321,150 @@ def print_system_diagnostics() -> None:
     print("\n" + "=" * 60)
 
 
+def get_windows_startup_dir() -> Path:
+    """Return path to user's Windows Startup directory."""
+    app_data = os.environ.get("APPDATA")
+    if app_data:
+        return Path(app_data) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    return Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+
+
+def get_startup_shortcut_path(name: str = "GTFB") -> Path:
+    """Return path to GTFB .lnk shortcut in Windows Startup directory."""
+    return get_windows_startup_dir() / f"{name}.lnk"
+
+
+def is_startup_shortcut_installed(name: str = "GTFB") -> bool:
+    """Check if GTFB startup shortcut exists in Windows Startup directory."""
+    if CURRENT_OS != "Windows":
+        return False
+    return get_startup_shortcut_path(name).is_file()
+
+
+def create_startup_shortcut(
+    target_path: Optional[Union[str, Path]] = None,
+    name: str = "GTFB",
+    arguments: str = "",
+    working_dir: Optional[Union[str, Path]] = None,
+    icon_path: Optional[Union[str, Path]] = None,
+) -> Path:
+    """Create or update Windows shortcut in Startup directory to launch GTFB on login.
+
+    Args:
+        target_path: Path to executable. Defaults to frozen binary or current Python interpreter.
+        name: Name of the shortcut (e.g. 'GTFB').
+        arguments: Command line arguments.
+        working_dir: Working directory for the shortcut.
+        icon_path: Path to .ico file for shortcut icon.
+
+    Returns:
+        Path: Full path to created .lnk file.
+    """
+    if CURRENT_OS != "Windows":
+        raise OSError("Windows startup shortcuts are only supported on Windows.")
+
+    shortcut_path = get_startup_shortcut_path(name)
+    shortcut_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if target_path is None:
+        if getattr(sys, "frozen", False):
+            target_path = Path(sys.executable)
+        else:
+            # Check for installed gtfb.exe script
+            gtfb_script = shutil.which("gtfb.exe") or shutil.which("gtfb")
+            if gtfb_script:
+                target_path = Path(gtfb_script)
+            else:
+                target_path = Path(sys.executable)
+                if not arguments:
+                    arguments = "-m gtfb.app"
+    else:
+        target_path = Path(target_path)
+
+    if working_dir is None:
+        working_dir = target_path.parent
+    else:
+        working_dir = Path(working_dir)
+
+    if icon_path is None:
+        # Check standard asset icon
+        possible_ico = target_path.parent / "assets" / "icons" / "icon.ico"
+        if possible_ico.is_file():
+            icon_path = possible_ico
+        else:
+            icon_path = ""
+    else:
+        icon_path = Path(icon_path)
+
+    target_str = str(target_path.resolve()).replace("'", "''")
+    shortcut_str = str(shortcut_path.resolve()).replace("'", "''")
+    working_str = str(working_dir.resolve()).replace("'", "''")
+    args_str = str(arguments).replace("'", "''")
+    icon_str = str(Path(icon_path).resolve()).replace("'", "''") if icon_path else ""
+
+    ps_script = (
+        f"$WshShell = New-Object -ComObject WScript.Shell\n"
+        f"$Shortcut = $WshShell.CreateShortcut('{shortcut_str}')\n"
+        f"$Shortcut.TargetPath = '{target_str}'\n"
+        f"$Shortcut.WorkingDirectory = '{working_str}'\n"
+        f"$Shortcut.Arguments = '{args_str}'\n"
+        f"$Shortcut.Description = 'GTFB - Anti-distraction bedtime automation tool'\n"
+    )
+    if icon_str:
+        ps_script += f"$Shortcut.IconLocation = '{icon_str}'\n"
+    ps_script += "$Shortcut.Save()\n"
+
+    import subprocess
+
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        logger.error("Failed to create startup shortcut: %s", result.stderr)
+        raise RuntimeError(f"Failed to create startup shortcut: {result.stderr.strip()}")
+
+    logger.info("Successfully created Windows startup shortcut at %s", shortcut_path)
+    return shortcut_path
+
+
+def remove_startup_shortcut(name: str = "GTFB") -> bool:
+    """Remove GTFB shortcut from Windows Startup directory if it exists."""
+    if CURRENT_OS != "Windows":
+        return False
+    shortcut_path = get_startup_shortcut_path(name)
+    if shortcut_path.is_file():
+        try:
+            shortcut_path.unlink()
+            logger.info("Successfully removed Windows startup shortcut %s", shortcut_path)
+            return True
+        except Exception as err:
+            logger.error("Failed to remove startup shortcut %s: %s", shortcut_path, err)
+            raise
+    return False
+
+
+def open_windows_startup_folder() -> bool:
+    """Open Windows Startup directory in Windows File Explorer."""
+    if CURRENT_OS != "Windows":
+        return False
+    startup_dir = get_windows_startup_dir()
+    startup_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(str(startup_dir))  # type: ignore[attr-defined]
+        else:
+            import subprocess
+            subprocess.Popen(["explorer.exe", str(startup_dir)])
+        return True
+    except Exception as err:
+        logger.error("Failed to open Windows startup folder %s: %s", startup_dir, err)
+        return False
+
+
 if __name__ == "__main__":
     print_system_diagnostics()
+
 
