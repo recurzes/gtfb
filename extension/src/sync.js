@@ -23,10 +23,120 @@ export function setupSyncAlarm(periodInMinutes = 1) {
   }
 }
 
+let activeEventStreamController = null;
+let isStreamActive = false;
+
+/**
+ * Handles incoming realtime configuration payload received via SSE /events or polling.
+ * @param {object} configData
+ * @param {number} activePort
+ */
+export async function handleIncomingConfigUpdate(configData, activePort) {
+  if (!configData) return;
+  await saveCachedConfig(configData);
+  if (extApi.storage && extApi.storage.local) {
+    await extApi.storage.local.set({
+      isConnected: true,
+      apiPort: activePort,
+      lastSyncSuccess: Date.now()
+    });
+  }
+  console.log(`[GTFB Sync] Realtime configuration synced from port ${activePort}`);
+
+  try {
+    const bg = await import("./background.js");
+    if (bg && typeof bg.evaluateCurrentSchedule === "function") {
+      await bg.evaluateCurrentSchedule();
+    }
+  } catch (e) {
+    console.warn("[GTFB Sync] Error evaluating schedule after realtime sync:", e);
+  }
+
+  try {
+    await reportStatusToApp(activePort);
+  } catch (e) {
+    console.warn("[GTFB Sync] Error reporting status to app:", e);
+  }
+}
+
+/**
+ * Establishes a persistent Server-Sent Events (SSE) stream with the desktop API server.
+ * Listens for real-time config updates without waiting for polling alarms.
+ * @param {number} port
+ */
+export async function startRealtimeEventStream(port) {
+  // If running under Node.js test environment, skip persistent SSE stream so tests exit cleanly
+  if (typeof process !== "undefined" && Boolean(process?.versions?.node)) {
+    return;
+  }
+  if (isStreamActive) {
+    return;
+  }
+
+
+  if (activeEventStreamController) {
+    try {
+      activeEventStreamController.abort();
+    } catch (e) {}
+    activeEventStreamController = null;
+  }
+
+  const controller = new AbortController();
+  activeEventStreamController = controller;
+  isStreamActive = true;
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/events`, {
+      signal: controller.signal,
+      headers: { Accept: "text/event-stream" }
+    });
+
+    if (!res.ok || !res.body) {
+      isStreamActive = false;
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (isStreamActive) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data:")) {
+          const dataStr = trimmed.slice(5).trim();
+          if (dataStr) {
+            try {
+              const payload = JSON.parse(dataStr);
+              if (payload && (payload.type === "config_updated" || payload.type === "init") && payload.config) {
+                await handleIncomingConfigUpdate(payload.config, port);
+              }
+            } catch (err) {
+              console.debug("[GTFB Sync] Error parsing SSE event payload:", err);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Normal disconnection or network abort
+    console.debug("[GTFB Sync] Realtime event stream disconnected:", err.message);
+  } finally {
+    isStreamActive = false;
+    activeEventStreamController = null;
+  }
+}
+
 /**
  * Fetches the latest configuration profile from the local GTFB desktop API.
  * Iterates through the supported port range (8765-8775) with timeout aborts.
- * Updates local storage cache, re-evaluates schedule/rules, and connection state upon success or failure.
+ * Updates local storage cache, re-evaluates schedule/rules, and starts the realtime stream.
  *
  * @param {number} [startPort=8765] - Starting port to scan
  * @param {number} [maxPort=8775] - Highest fallback port to scan
@@ -62,30 +172,10 @@ export async function fetchConfigFromApp(
   }
 
   if (configData && activePort) {
-    await saveCachedConfig(configData);
-    if (extApi.storage && extApi.storage.local) {
-      await extApi.storage.local.set({
-        isConnected: true,
-        apiPort: activePort,
-        lastSyncSuccess: Date.now()
-      });
-    }
-    console.log(`[GTFB Sync] Successfully synced config from port ${activePort}`);
+    await handleIncomingConfigUpdate(configData, activePort);
 
-    try {
-      const bg = await import("./background.js");
-      if (bg && typeof bg.evaluateCurrentSchedule === "function") {
-        await bg.evaluateCurrentSchedule();
-      }
-    } catch (e) {
-      console.warn("[GTFB Sync] Error evaluating schedule after sync:", e);
-    }
-
-    try {
-      await reportStatusToApp(activePort);
-    } catch (e) {
-      console.warn("[GTFB Sync] Error reporting status to app:", e);
-    }
+    // Launch realtime SSE background stream if not active
+    startRealtimeEventStream(activePort).catch(() => {});
 
     return { success: true, config: configData, port: activePort };
   } else {
@@ -95,6 +185,64 @@ export async function fetchConfigFromApp(
     console.warn("[GTFB Sync] Desktop app not reachable on localhost.");
     return { success: false };
   }
+}
+
+
+/**
+ * Detect the browser vendor (brave, edge, firefox, opera, vivaldi, chrome).
+ * @returns {Promise<string>}
+ */
+export async function detectBrowser() {
+  if (typeof navigator === "undefined") {
+    return "chrome";
+  }
+
+  // 1. Check Brave's official navigator.brave.isBrave() API
+  try {
+    if (navigator.brave && typeof navigator.brave.isBrave === "function") {
+      const isBrave = await navigator.brave.isBrave();
+      if (isBrave) {
+        return "brave";
+      }
+    }
+  } catch (err) {
+    // Ignore error
+  }
+
+  const ua = navigator.userAgent || "";
+
+  // 2. Check User-Agent strings
+  if (ua.includes("Brave") || ua.includes("brave")) {
+    return "brave";
+  }
+  if (ua.includes("Edg/")) {
+    return "edge";
+  }
+  if (ua.includes("OPR/") || ua.includes("Opera")) {
+    return "opera";
+  }
+  if (ua.includes("Vivaldi")) {
+    return "vivaldi";
+  }
+  if (ua.includes("Firefox/")) {
+    return "firefox";
+  }
+
+  // 3. Check User-Agent Data Brands
+  try {
+    if (navigator.userAgentData && Array.isArray(navigator.userAgentData.brands)) {
+      const hasBraveBrand = navigator.userAgentData.brands.some(
+        (b) => b && typeof b.brand === "string" && b.brand.toLowerCase().includes("brave")
+      );
+      if (hasBraveBrand) {
+        return "brave";
+      }
+    }
+  } catch (err) {
+    // Ignore error
+  }
+
+  return "chrome";
 }
 
 /**
@@ -135,14 +283,8 @@ export async function reportStatusToApp(apiPort = null) {
     }
 
     // Detect browser vendor
-    let browserName = "chrome";
-    if (typeof navigator !== "undefined" && navigator.userAgent) {
-      if (navigator.userAgent.includes("Edg/")) {
-        browserName = "edge";
-      } else if (navigator.userAgent.includes("Firefox/")) {
-        browserName = "firefox";
-      }
-    }
+    const browserName = await detectBrowser();
+
 
     let version = "1.0.0";
     if (
@@ -162,6 +304,7 @@ export async function reportStatusToApp(apiPort = null) {
       rules_count: rulesCount,
       timestamp: new Date().toISOString()
     };
+
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
