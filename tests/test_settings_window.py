@@ -452,7 +452,8 @@ class TestSettingsWindow(unittest.TestCase):
             block_rules=[BlockRule(domains=["example.com", "custom.org"])],
         )
         window = SettingsWindow(config=custom_config)
-        with patch.object(tk.Tk, "mainloop"):
+        with patch("tkinter.Tk", side_effect=lambda: tk.Toplevel(self.root)), \
+             patch.object(tk.Toplevel, "mainloop", create=True):
             window._create_window()
             try:
                 self.assertIsNotNone(window.bedtime_section)
