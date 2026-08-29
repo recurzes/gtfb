@@ -13,7 +13,17 @@
   ],
   "background": {
     "service_worker": "src/background.js",
-    "type": "module"
+    "type": "module",
+    "scripts": [
+      "lib/browser-polyfill.min.js",
+      "src/background.js"
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "gtfb@local.dev",
+      "strict_min_version": "109.0"
+    }
   },
   "action": {
     "default_title": "GTFB Anti-Distraction",
@@ -30,3 +40,4 @@
     "128": "icons/icon128.png"
   }
 }
+
