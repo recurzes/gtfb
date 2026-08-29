@@ -4,44 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Blocked — GTFB</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #0f172a;
-      color: #f8fafc;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .card {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 32px;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
-    }
-    h1 {
-      margin: 0 0 12px;
-      font-size: 24px;
-      color: #ef4444;
-    }
-    p {
-      color: #94a3b8;
-      font-size: 15px;
-      line-height: 1.5;
-      margin: 0 0 20px;
-    }
-  </style>
+  <link rel="stylesheet" href="blocked.css">
 </head>
 <body>
-  <div class="card">
+  <main class="card">
+    <div class="icon-container" aria-hidden="true">
+      <svg class="shield-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
     <h1>Distraction Blocked</h1>
-    <p>This website is restricted by GTFB to protect your sleep and focus.</p>
-  </div>
+    <p class="subtitle">This website is currently restricted by GTFB.</p>
+    
+    <div class="domain-badge" id="domainBadge">Domain Protected</div>
+    
+    <p class="reminder">
+      Protect your sleep and your focus. There is nothing for you here right now.
+    </p>
+
+    <div class="actions">
+      <button id="closeTabBtn" class="btn primary" type="button">Close This Tab</button>
+    </div>
+  </main>
+
+  <script src="blocked.js"></script>
 </body>
 </html>
