@@ -104,6 +104,10 @@ class GTFBRequestHandler(BaseHTTPRequestHandler):
                     return
 
                 if content_length > 65536:
+                    try:
+                        self.rfile.read(content_length)
+                    except Exception:
+                        pass
                     self._send_json_response(413, {"error": "Payload too large"})
                     return
 
