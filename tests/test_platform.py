@@ -213,3 +213,120 @@ class TestCliDiagnosticsFlag(TestCase):
         ret = main(["--check-system"])
         self.assertEqual(ret, 0)
         mock_print.assert_called_once()
+
+
+class TestWindowsStartupShortcuts(TestCase):
+    """Test suite for Windows startup shortcut creation, verification, and removal."""
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    def test_get_windows_startup_dir_and_shortcut_path(self) -> None:
+        from pathlib import Path
+        with patch.dict("os.environ", {"APPDATA": r"C:\Users\testuser\AppData\Roaming"}):
+            from gtfb.core.platform_utils import get_startup_shortcut_path, get_windows_startup_dir
+
+            startup_dir = get_windows_startup_dir()
+            self.assertEqual(
+                startup_dir,
+                Path(r"C:\Users\testuser\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"),
+            )
+
+            shortcut = get_startup_shortcut_path("GTFB")
+            self.assertEqual(shortcut, startup_dir / "GTFB.lnk")
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    def test_is_startup_shortcut_installed(self) -> None:
+        from gtfb.core.platform_utils import is_startup_shortcut_installed
+        with patch("pathlib.Path.is_file", return_value=True):
+            self.assertTrue(is_startup_shortcut_installed("GTFB"))
+        with patch("pathlib.Path.is_file", return_value=False):
+            self.assertFalse(is_startup_shortcut_installed("GTFB"))
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Linux")
+    def test_is_startup_shortcut_installed_non_windows(self) -> None:
+        from gtfb.core.platform_utils import is_startup_shortcut_installed
+        self.assertFalse(is_startup_shortcut_installed("GTFB"))
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    @patch("subprocess.run")
+    def test_create_startup_shortcut_invokes_powershell(self, mock_subproc: MagicMock) -> None:
+        from pathlib import Path
+        mock_subproc.return_value = MagicMock(returncode=0)
+        from gtfb.core.platform_utils import create_startup_shortcut
+
+        with patch("pathlib.Path.mkdir"):
+            shortcut_path = create_startup_shortcut(
+                target_path=r"C:\Program Files\GTFB\gtfb.exe",
+                name="GTFB",
+            )
+            self.assertEqual(shortcut_path.name, "GTFB.lnk")
+            mock_subproc.assert_called_once()
+            cmd_args = mock_subproc.call_args[0][0]
+            self.assertEqual(cmd_args[0], "powershell.exe")
+            self.assertIn("WScript.Shell", cmd_args[4])
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Linux")
+    def test_create_startup_shortcut_raises_on_non_windows(self) -> None:
+        from gtfb.core.platform_utils import create_startup_shortcut
+        with self.assertRaises(OSError):
+            create_startup_shortcut()
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    def test_remove_startup_shortcut(self) -> None:
+        from gtfb.core.platform_utils import remove_startup_shortcut
+        with patch("pathlib.Path.is_file", return_value=True), patch("pathlib.Path.unlink") as mock_unlink:
+            res = remove_startup_shortcut("GTFB")
+            self.assertTrue(res)
+            mock_unlink.assert_called_once()
+
+        with patch("pathlib.Path.is_file", return_value=False):
+            res = remove_startup_shortcut("GTFB")
+            self.assertFalse(res)
+
+    @patch("gtfb.core.platform_utils.CURRENT_OS", "Windows")
+    def test_open_windows_startup_folder(self) -> None:
+        from gtfb.core.platform_utils import open_windows_startup_folder
+        with patch("pathlib.Path.mkdir"), patch("os.startfile", create=True) as mock_startfile:
+            res = open_windows_startup_folder()
+            self.assertTrue(res)
+            mock_startfile.assert_called_once()
+
+
+class TestCliStartupFlags(TestCase):
+    """Test CLI startup install, remove, and open-folder commands."""
+
+    def test_parser_has_startup_flags(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--install-startup"])
+        self.assertTrue(args.install_startup)
+
+        args = parser.parse_args(["--remove-startup"])
+        self.assertTrue(args.remove_startup)
+
+        args = parser.parse_args(["--open-startup-folder"])
+        self.assertTrue(args.open_startup_folder)
+
+    @patch("gtfb.app.setup_logging")
+    @patch("gtfb.core.platform_utils.create_startup_shortcut")
+    def test_main_install_startup(self, mock_create: MagicMock, mock_logging: MagicMock) -> None:
+        from pathlib import Path
+        mock_create.return_value = Path("C:/test/GTFB.lnk")
+        ret = main(["--install-startup"])
+        self.assertEqual(ret, 0)
+        mock_create.assert_called_once()
+
+    @patch("gtfb.app.setup_logging")
+    @patch("gtfb.core.platform_utils.remove_startup_shortcut")
+    def test_main_remove_startup(self, mock_remove: MagicMock, mock_logging: MagicMock) -> None:
+        mock_remove.return_value = True
+        ret = main(["--remove-startup"])
+        self.assertEqual(ret, 0)
+        mock_remove.assert_called_once()
+
+    @patch("gtfb.app.setup_logging")
+    @patch("gtfb.core.platform_utils.open_windows_startup_folder")
+    def test_main_open_startup_folder(self, mock_open: MagicMock, mock_logging: MagicMock) -> None:
+        mock_open.return_value = True
+        ret = main(["--open-startup-folder"])
+        self.assertEqual(ret, 0)
+        mock_open.assert_called_once()
+

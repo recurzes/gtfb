@@ -207,6 +207,85 @@ class BlocklistSection(ttk.LabelFrame):
         return list(self.domains)
 
 
+class StartupSection(ttk.LabelFrame):
+    """UI Section for configuring Windows startup behavior and managing startup shortcut."""
+
+    def __init__(self, parent: tk.Misc) -> None:
+        super().__init__(parent, text="Windows Startup", padding="12")
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        """Construct UI checkbox and button for startup shortcut."""
+        from gtfb.core.platform_utils import CURRENT_OS, is_startup_shortcut_installed
+
+        is_installed = is_startup_shortcut_installed() if CURRENT_OS == "Windows" else False
+        self.var_startup = tk.BooleanVar(master=self, value=is_installed)
+
+        top_row = ttk.Frame(self)
+        top_row.pack(fill=tk.X, pady=(0, 4))
+
+        self.chk_startup = ttk.Checkbutton(
+            top_row,
+            text="Launch GTFB on Windows Startup",
+            variable=self.var_startup,
+        )
+        self.chk_startup.pack(side=tk.LEFT)
+
+        self.btn_open_folder = ttk.Button(
+            top_row,
+            text="Open Startup Folder",
+            command=self.on_open_folder,
+        )
+        self.btn_open_folder.pack(side=tk.RIGHT)
+
+        lbl_desc = ttk.Label(
+            self,
+            text="Registers GTFB in Windows Startup (customizable in Task Manager > Startup apps).",
+            foreground="gray",
+            wraplength=420,
+        )
+        lbl_desc.pack(anchor="w", pady=(2, 0))
+
+        if CURRENT_OS != "Windows":
+            self.chk_startup.configure(state="disabled")
+            self.btn_open_folder.configure(state="disabled")
+
+    def on_open_folder(self) -> None:
+        """Open Windows Startup folder in File Explorer."""
+        from gtfb.core.platform_utils import open_windows_startup_folder
+
+        if not open_windows_startup_folder():
+            messagebox.showinfo(
+                "Startup Folder",
+                "Opening the startup folder is only supported on Windows.",
+                parent=self.winfo_toplevel(),
+            )
+
+    def apply_changes(self) -> None:
+        """Synchronize startup shortcut state with user selection."""
+        from gtfb.core.platform_utils import (
+            CURRENT_OS,
+            create_startup_shortcut,
+            is_startup_shortcut_installed,
+            remove_startup_shortcut,
+        )
+
+        if CURRENT_OS != "Windows":
+            return
+
+        wants_startup = bool(self.var_startup.get())
+        is_installed = is_startup_shortcut_installed()
+
+        try:
+            if wants_startup and not is_installed:
+                create_startup_shortcut()
+            elif not wants_startup and is_installed:
+                remove_startup_shortcut()
+        except Exception as err:
+            logger.warning("Could not update startup shortcut state: %s", err)
+            raise
+
+
 class SettingsWindow:
     """GTFB Desktop Settings Window."""
 
@@ -229,6 +308,7 @@ class SettingsWindow:
         self._icon_img: Optional[tk.PhotoImage] = None
         self.bedtime_section: Optional[BedtimeSection] = None
         self.blocklist_section: Optional[BlocklistSection] = None
+        self.startup_section: Optional[StartupSection] = None
 
     @classmethod
     def get_instance(cls) -> Optional["SettingsWindow"]:
@@ -298,7 +378,7 @@ class SettingsWindow:
         except Exception as err:
             logger.debug("Could not set window icon: %s", err)
 
-    def _center_window(self, width: int = 480, height: int = 580) -> None:
+    def _center_window(self, width: int = 480, height: int = 660) -> None:
         """Center the window on screen."""
         win = self.window or self.root
         if not win:
@@ -353,6 +433,10 @@ class SettingsWindow:
             # Save atomically to disk
             save_config_atomic(self.config, get_config_path())
 
+            # Apply Windows startup shortcut preference
+            if self.startup_section:
+                self.startup_section.apply_changes()
+
             # Notify live application/scheduler
             if self.on_save_callback:
                 self.on_save_callback(self.config)
@@ -372,11 +456,11 @@ class SettingsWindow:
 
             self.root = self.window
             self.window.title("GTFB — Settings")
-            self.window.geometry("480x580")
+            self.window.geometry("480x660")
             self.window.resizable(False, False)
 
             self._set_window_icon()
-            self._center_window(480, 580)
+            self._center_window(480, 660)
 
             # Bind close window protocol
             self.window.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -405,6 +489,10 @@ class SettingsWindow:
             )
             self.blocklist_section = BlocklistSection(main_frame, initial_domains=initial_domains)
             self.blocklist_section.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+
+            # Windows Startup section
+            self.startup_section = StartupSection(main_frame)
+            self.startup_section.pack(fill=tk.X, pady=(0, 12))
 
             # Action buttons
             self._add_action_buttons(main_frame)

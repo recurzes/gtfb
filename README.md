@@ -2,6 +2,8 @@
 
 GTFB is a cross-platform anti-distraction bedtime automation tool designed to enforce healthy digital habits by gracefully closing open desktop applications and triggering a scheduled system shutdown at bedtime.
 
+> 📖 **Looking for a full walkthrough? Check out the comprehensive [User Overview & User Guide](docs/USER_GUIDE.md).**
+
 ## Repository Layout
 
 ```
@@ -63,9 +65,32 @@ python -m gtfb.app --dry-run
 # Run bedtime scheduler for 22:30 without shutting down OS
 gtfb --hour 22 --minute 30 --no-shutdown
 
+# Register GTFB in Windows Startup (runs on login)
+gtfb --install-startup
+
+# Remove GTFB from Windows Startup
+gtfb --remove-startup
+
+# Open Windows Startup apps folder
+gtfb --open-startup-folder
+
 # Run standard bedtime automation (closes apps at 22:00 and shuts down)
 gtfb
 ```
+
+### Windows Startup & Customization
+
+GTFB can automatically start with Windows:
+- **Settings UI**: Open **Settings...** from the system tray icon, toggle **Launch GTFB on Windows Startup**, and click **Save Settings**.
+- **Startup Apps Folder**: Click **Open Startup Folder** in Settings or run `gtfb --open-startup-folder` to inspect or customize your startup shortcuts directly.
+- **Windows Task Manager**: Once registered, GTFB appears in Windows Task Manager under the **Startup apps** tab (and in Windows Settings > Apps > Startup) where you can easily toggle it enabled or disabled natively.
+
+### Configuration & Logs Directory
+
+To prevent accidental modification or deletion, configuration and log files are stored in the OS-standard application data directory away from the user workspace:
+- **Windows:** `%APPDATA%\GTFB\` (`config.json`, `bedtime.log`, `api_port.json`)
+- **macOS:** `~/Library/Application Support/GTFB/`
+- **Linux:** `~/.config/gtfb/` or `$XDG_CONFIG_HOME/gtfb/`
 
 ### Windows Standalone Executable (.exe)
 
@@ -92,6 +117,6 @@ For detailed platform prerequisites (Linux AppIndicator packages, macOS permissi
 ### Running Tests
 
 ```bash
-uv run pytest
+python -m pytest
 ```
 

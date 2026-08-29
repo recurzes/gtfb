@@ -57,6 +57,21 @@ def build_parser() -> argparse.ArgumentParser:
         dest="check_system",
         help="Run system and platform capability diagnostic checks and exit.",
     )
+    parser.add_argument(
+        "--install-startup",
+        action="store_true",
+        help="Create a shortcut in the Windows Startup folder to run GTFB on system login.",
+    )
+    parser.add_argument(
+        "--remove-startup",
+        action="store_true",
+        help="Remove the GTFB shortcut from the Windows Startup folder.",
+    )
+    parser.add_argument(
+        "--open-startup-folder",
+        action="store_true",
+        help="Open the Windows Startup folder in File Explorer.",
+    )
     return parser
 
 
@@ -71,6 +86,40 @@ def main(argv: list[str] | None = None) -> int:
 
         print_system_diagnostics()
         return 0
+
+    if args.install_startup:
+        from gtfb.core.platform_utils import create_startup_shortcut
+
+        try:
+            path = create_startup_shortcut()
+            print(f"Windows startup shortcut successfully created at:\n  {path}")
+            return 0
+        except Exception as e:
+            print(f"Error creating startup shortcut: {e}", file=sys.stderr)
+            return 1
+
+    if args.remove_startup:
+        from gtfb.core.platform_utils import remove_startup_shortcut
+
+        try:
+            if remove_startup_shortcut():
+                print("Windows startup shortcut successfully removed.")
+            else:
+                print("No GTFB startup shortcut was found to remove.")
+            return 0
+        except Exception as e:
+            print(f"Error removing startup shortcut: {e}", file=sys.stderr)
+            return 1
+
+    if args.open_startup_folder:
+        from gtfb.core.platform_utils import open_windows_startup_folder
+
+        if open_windows_startup_folder():
+            print("Opened Windows Startup folder.")
+            return 0
+        else:
+            print("Opening the startup folder is only supported on Windows.", file=sys.stderr)
+            return 1
 
     if args.cli:
         try:

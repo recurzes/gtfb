@@ -11,11 +11,18 @@ DEFAULT_SHUTDOWN_DELAY_SECONDS: int = 30
 DEFAULT_LOG_FILE: str = "bedtime.log"
 
 
+_DEFAULT_SENTINEL = object()
+
+
 def setup_logging(
-    log_file: Optional[Union[str, Path]] = DEFAULT_LOG_FILE,
+    log_file: Optional[Union[str, Path, object]] = _DEFAULT_SENTINEL,
     level: int = logging.INFO,
 ) -> None:
-    """Configure root logging to output to both console and a log file."""
+    """Configure root logging to output to both console and a log file.
+
+    By default, logs are written to the application config directory (e.g. %APPDATA%/GTFB/bedtime.log).
+    Pass a specific path to override, or pass None to disable file logging.
+    """
     root_logger = logging.getLogger()
     if root_logger.handlers:
         return
@@ -30,11 +37,23 @@ def setup_logging(
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    if log_file:
+    if log_file is _DEFAULT_SENTINEL:
+        from gtfb.config.storage import get_log_path
+
+        file_path = get_log_path(DEFAULT_LOG_FILE)
+    elif log_file:
         file_path = Path(log_file)
-        file_handler = logging.FileHandler(file_path, encoding="utf-8")
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
+    else:
+        file_path = None
+
+    if file_path:
+        try:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.FileHandler(file_path, encoding="utf-8")
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
+        except Exception as err:
+            root_logger.warning("Could not initialize file logger at %s: %s", file_path, err)
 
 
 # Processes that should never be identified or closed as user GUI applications

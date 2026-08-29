@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from gtfb.config import (
     DEFAULT_GRACE_PERIOD_SECONDS,
@@ -22,6 +22,7 @@ from gtfb.config import (
     OverridePolicy,
     get_config_dir,
     get_config_path,
+    get_log_path,
     load_config,
     save_config,
     setup_logging,
@@ -241,6 +242,35 @@ class TestConfigStorage(unittest.TestCase):
             self.assertTrue(file_path.exists())
 
 
+    def test_get_log_path_resolves_to_config_dir(self):
+        log_path = get_log_path()
+        config_dir = get_config_dir()
+        self.assertEqual(log_path, config_dir / "bedtime.log")
+        self.assertEqual(log_path.name, "bedtime.log")
+
+    def test_setup_logging_creates_parent_dir_and_file_handler(self):
+        import logging
+        with tempfile.TemporaryDirectory() as tmpdir:
+            custom_log = Path(tmpdir) / "appdata_sim" / "bedtime.log"
+            self.assertFalse(custom_log.parent.exists())
+
+            # Test setup_logging with non-existent parent directory
+            with patch("logging.getLogger") as mock_get_logger:
+                mock_root = MagicMock()
+                mock_root.handlers = []
+                mock_get_logger.return_value = mock_root
+
+                setup_logging(log_file=custom_log)
+                self.assertTrue(custom_log.parent.exists())
+                self.assertTrue(mock_root.addHandler.called)
+
+                # Close file handlers to release file lock on Windows
+                for call in mock_root.addHandler.call_args_list:
+                    handler = call[0][0]
+                    if hasattr(handler, "close"):
+                        handler.close()
+
+
 class TestConfigReExports(unittest.TestCase):
     """Tests ensuring backwards compatibility with legacy gtfb.config imports."""
 
@@ -251,6 +281,7 @@ class TestConfigReExports(unittest.TestCase):
         self.assertEqual(DEFAULT_SHUTDOWN_DELAY_SECONDS, 30)
         self.assertEqual(DEFAULT_LOG_FILE, "bedtime.log")
         self.assertTrue(callable(setup_logging))
+        self.assertTrue(callable(get_log_path))
         self.assertIsInstance(SYSTEM_EXCLUDED_PROCESSES, list)
         self.assertIsInstance(LINUX_GUI_PATTERNS, list)
         self.assertIsInstance(MACOS_GUI_PATTERNS, list)
