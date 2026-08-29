@@ -365,6 +365,80 @@ class TestTrayAppStatusStoreIntegration(unittest.TestCase):
         self.assertIs(app.status_store, custom_store)
         self.assertIs(app.api_server.status_store, custom_store)
 
+    @patch("pystray.Icon")
+    def test_tray_app_reflects_post_status_endpoint_updates(self, mock_icon):
+        port = get_free_port()
+        custom_store = ExtensionStatusStore()
+        server = APIServer(host="127.0.0.1", port=port, status_store=custom_store)
+        app = TrayApp(api_server=server, status_store=custom_store)
+
+        self.assertEqual(app.get_extension_status_text(), "○ Extension: Not Connected")
+
+        try:
+            server.start()
+
+            # 1. Send active blocking heartbeat
+            payload1 = {
+                "browser": "chrome",
+                "version": "1.0.0",
+                "blocking_active": True,
+                "rules_count": 8,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            req1 = urllib.request.Request(
+                f"http://127.0.0.1:{port}/status",
+                data=json.dumps(payload1).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req1, timeout=5) as res1:
+                self.assertEqual(res1.status, 200)
+
+            self.assertEqual(
+                app.get_extension_status_text(),
+                "● Extension: Connected (Chrome — Active)",
+            )
+
+            # 2. Send inactive blocking heartbeat (e.g. user toggled off)
+            payload2 = {
+                "browser": "chrome",
+                "version": "1.0.0",
+                "blocking_active": False,
+                "rules_count": 0,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            req2 = urllib.request.Request(
+                f"http://127.0.0.1:{port}/status",
+                data=json.dumps(payload2).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req2, timeout=5) as res2:
+                self.assertEqual(res2.status, 200)
+
+            self.assertEqual(
+                app.get_extension_status_text(),
+                "● Extension: Connected (Chrome — Inactive)",
+            )
+
+            # 3. Simulate heartbeat timeout (> 90s)
+            custom_store._last_received_at = datetime.now(timezone.utc) - timedelta(seconds=95)
+            self.assertEqual(
+                app.get_extension_status_text(),
+                "○ Extension: Not Connected",
+            )
+
+            # 4. Resume heartbeat
+            with urllib.request.urlopen(req1, timeout=5) as res3:
+                self.assertEqual(res3.status, 200)
+
+            self.assertEqual(
+                app.get_extension_status_text(),
+                "● Extension: Connected (Chrome — Active)",
+            )
+        finally:
+            server.stop()
+
 
 if __name__ == "__main__":
     unittest.main()

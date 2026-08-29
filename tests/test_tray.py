@@ -1,5 +1,4 @@
-"""Tests for GTFB system tray module and UI components."""
-
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
@@ -7,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 import pystray
 
+from gtfb.api.status_store import ExtensionStatusStore
 from gtfb.app import build_parser
 from gtfb.config.models import ConfigProfile
 from gtfb.ui.settings_window import SettingsWindow
@@ -48,40 +48,45 @@ class TestTrayMenuAndApp(unittest.TestCase):
         self.assertIsInstance(menu, pystray.Menu)
 
         items = list(menu.items)
-        # Expected: Status, Separator, Settings..., Start Scheduler, Stop Scheduler, Separator, Quit
-        self.assertEqual(len(items), 7)
+        # Expected: Status, Extension Status, Separator, Settings..., Start Scheduler, Stop Scheduler, Separator, Quit
+        self.assertEqual(len(items), 8)
 
         # Item 0: Status label (disabled)
         status_item = items[0]
         self.assertEqual(str(status_item), "Status: Stopped")
         self.assertFalse(status_item.enabled)
 
-        # Item 1: Separator
-        self.assertEqual(str(items[1]), "- - - -")
+        # Item 1: Extension status label (disabled)
+        ext_status_item = items[1]
+        self.assertEqual(str(ext_status_item), "○ Extension: Not Connected")
+        self.assertFalse(ext_status_item.enabled)
 
-        # Item 2: Settings...
-        settings_item = items[2]
+        # Item 2: Separator
+        self.assertEqual(str(items[2]), "- - - -")
+
+        # Item 3: Settings...
+        settings_item = items[3]
         self.assertEqual(settings_item.text, "Settings...")
         self.assertTrue(settings_item.enabled)
         self.assertEqual(settings_item._action, app.on_open_settings)
 
-        # Item 3: Start Scheduler
-        start_item = items[3]
+        # Item 4: Start Scheduler
+        start_item = items[4]
         self.assertEqual(start_item.text, "Start Scheduler")
         self.assertTrue(start_item.visible)
         self.assertEqual(start_item._action, app.on_start)
 
-        # Item 4: Stop Scheduler
-        stop_item = items[4]
+        # Item 5: Stop Scheduler
+        stop_item = items[5]
         self.assertEqual(stop_item.text, "Stop Scheduler")
         self.assertFalse(stop_item.visible)
         self.assertEqual(stop_item._action, app.on_stop)
 
-        # Item 5: Separator
-        self.assertEqual(str(items[5]), "- - - -")
+        # Item 6: Separator
+        self.assertEqual(str(items[6]), "- - - -")
 
-        # Item 6: Quit
-        quit_item = items[6]
+        # Item 7: Quit
+        quit_item = items[7]
         self.assertEqual(quit_item.text, "Quit")
         self.assertTrue(quit_item.enabled)
         self.assertEqual(quit_item._action, app.on_quit)
@@ -98,15 +103,50 @@ class TestTrayMenuAndApp(unittest.TestCase):
         status_item = items[0]
         self.assertEqual(str(status_item), "Status: Running")
 
-        settings_item = items[2]
+        settings_item = items[3]
         self.assertEqual(settings_item.text, "Settings...")
         self.assertTrue(settings_item.enabled)
 
-        start_item = items[3]
+        start_item = items[4]
         self.assertFalse(start_item.visible)
 
-        stop_item = items[4]
+        stop_item = items[5]
         self.assertTrue(stop_item.visible)
+
+    def test_extension_status_text_disconnected_by_default(self):
+        app = TrayApp()
+        self.assertEqual(app.get_extension_status_text(), "○ Extension: Not Connected")
+
+    def test_extension_status_text_connected_chrome_active(self):
+        store = ExtensionStatusStore()
+        store.update_status({"browser": "chrome", "version": "1.0.0", "blocking_active": True, "rules_count": 5})
+        app = TrayApp(status_store=store)
+        self.assertEqual(app.get_extension_status_text(), "● Extension: Connected (Chrome — Active)")
+
+    def test_extension_status_text_connected_edge_inactive(self):
+        store = ExtensionStatusStore()
+        store.update_status({"browser": "edge", "version": "1.0.0", "blocking_active": False, "rules_count": 0})
+        app = TrayApp(status_store=store)
+        self.assertEqual(app.get_extension_status_text(), "● Extension: Connected (Edge — Inactive)")
+
+    def test_extension_status_text_connected_firefox_active(self):
+        store = ExtensionStatusStore()
+        store.update_status({"browser": "firefox", "version": "1.0.0", "blocking_active": True, "rules_count": 10})
+        app = TrayApp(status_store=store)
+        self.assertEqual(app.get_extension_status_text(), "● Extension: Connected (Firefox — Active)")
+
+    def test_extension_status_text_timeout_after_90_seconds(self):
+        store = ExtensionStatusStore()
+        store.update_status({"browser": "chrome", "version": "1.0.0", "blocking_active": True})
+        # Simulate elapsed time beyond 90 seconds timeout
+        store._last_received_at = datetime.now(timezone.utc) - timedelta(seconds=91)
+        app = TrayApp(status_store=store)
+        self.assertEqual(app.get_extension_status_text(), "○ Extension: Not Connected")
+
+    def test_extension_status_text_handles_none_status_store(self):
+        app = TrayApp()
+        app.status_store = None
+        self.assertEqual(app.get_extension_status_text(), "○ Extension: Not Connected")
 
     def test_on_open_settings_starts_thread(self):
         app = TrayApp()

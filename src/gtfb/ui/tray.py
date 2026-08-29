@@ -201,11 +201,31 @@ class TrayApp:
             daemon=True,
         ).start()
 
+    def get_extension_status_text(self, item: Optional[pystray.MenuItem] = None) -> str:
+        """Return dynamic menu label reflecting browser extension connection and enforcement state."""
+        if not self.status_store:
+            return "○ Extension: Not Connected"
+        latest = self.status_store.get_status()
+        is_connected = self.status_store.is_connected(timeout_seconds=90.0)
+
+        if not is_connected or not latest:
+            return "○ Extension: Not Connected"
+
+        browser_raw = latest.get("browser") or "Browser"
+        browser = str(browser_raw).capitalize()
+        blocking = "Active" if latest.get("blocking_active") else "Inactive"
+        return f"● Extension: Connected ({browser} — {blocking})"
+
     def build_menu(self) -> Menu:
         """Construct dynamic tray context menu."""
         return Menu(
             item(
                 lambda text: f"Status: {'Running' if self.is_scheduler_running() else 'Stopped'}",
+                None,
+                enabled=False,
+            ),
+            item(
+                self.get_extension_status_text,
                 None,
                 enabled=False,
             ),
