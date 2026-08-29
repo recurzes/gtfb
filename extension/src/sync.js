@@ -80,6 +80,12 @@ export async function fetchConfigFromApp(
       console.warn("[GTFB Sync] Error evaluating schedule after sync:", e);
     }
 
+    try {
+      await reportStatusToApp(activePort);
+    } catch (e) {
+      console.warn("[GTFB Sync] Error reporting status to app:", e);
+    }
+
     return { success: true, config: configData, port: activePort };
   } else {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
@@ -87,6 +93,101 @@ export async function fetchConfigFromApp(
     }
     console.warn("[GTFB Sync] Desktop app not reachable on localhost.");
     return { success: false };
+  }
+}
+
+/**
+ * Reports current extension enforcement state, dynamic rule count, and browser metadata
+ * to the GTFB desktop app's POST /status endpoint.
+ *
+ * @param {number|null} [apiPort=null] - Target desktop API port. If not supplied, reads from storage or defaults to 8765.
+ * @returns {Promise<{ success: boolean, payload?: object, error?: string }>}
+ */
+export async function reportStatusToApp(apiPort = null) {
+  try {
+    let targetPort = apiPort;
+    let isBlockingActive = false;
+
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      const stored = await chrome.storage.local.get(["isBlockingActive", "apiPort", "lockedUntil"]);
+      if (stored) {
+        if (!targetPort && typeof stored.apiPort === "number") {
+          targetPort = stored.apiPort;
+        }
+        const now = Date.now();
+        const isLocked = Boolean(stored.lockedUntil && stored.lockedUntil > now);
+        isBlockingActive = isLocked || (stored.isBlockingActive !== undefined ? Boolean(stored.isBlockingActive) : true);
+      }
+    }
+
+    if (!targetPort) {
+      targetPort = START_PORT;
+    }
+
+    let rulesCount = 0;
+    if (
+      typeof chrome !== "undefined" &&
+      chrome.declarativeNetRequest &&
+      typeof chrome.declarativeNetRequest.getDynamicRules === "function"
+    ) {
+      const dynamicRules = await chrome.declarativeNetRequest.getDynamicRules();
+      rulesCount = Array.isArray(dynamicRules) ? dynamicRules.length : 0;
+    }
+
+    // Detect browser vendor
+    let browserName = "chrome";
+    if (typeof navigator !== "undefined" && navigator.userAgent) {
+      if (navigator.userAgent.includes("Edg/")) {
+        browserName = "edge";
+      } else if (navigator.userAgent.includes("Firefox/")) {
+        browserName = "firefox";
+      }
+    }
+
+    let version = "1.0.0";
+    if (
+      typeof chrome !== "undefined" &&
+      chrome.runtime &&
+      typeof chrome.runtime.getManifest === "function"
+    ) {
+      const manifest = chrome.runtime.getManifest();
+      if (manifest && manifest.version) {
+        version = manifest.version;
+      }
+    }
+
+    const payload = {
+      browser: browserName,
+      version: version,
+      blocking_active: Boolean(isBlockingActive),
+      rules_count: rulesCount,
+      timestamp: new Date().toISOString()
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+    const res = await fetch(`http://127.0.0.1:${targetPort}/status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      console.log("[GTFB Status] Reported state to desktop app:", payload);
+      return { success: true, payload };
+    } else {
+      console.debug("[GTFB Status] Server responded with status:", res.status);
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+  } catch (err) {
+    // Desktop app may be closed or offline; ignore gracefully without throwing
+    console.debug("[GTFB Status] Could not report status to desktop app:", err.message);
+    return { success: false, error: err.message };
   }
 }
 

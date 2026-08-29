@@ -10,7 +10,8 @@ import {
   fetchConfigFromApp,
   setupSyncAlarm,
   SYNC_ALARM_NAME,
-  getSyncStatus
+  getSyncStatus,
+  reportStatusToApp
 } from "./sync.js";
 
 export const DEFAULT_SCHEDULE = {
@@ -85,6 +86,11 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
   // If focus lock is currently active, do not disengage blocking but ensure rules are applied
   if (isLocked) {
     await applyBlockRules();
+    try {
+      await reportStatusToApp();
+    } catch (e) {
+      console.debug("[GTFB Background] Error reporting status after schedule check:", e);
+    }
     return;
   }
 
@@ -100,6 +106,13 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       await chrome.storage.local.set({ isBlockingActive: true });
     }
+    if (!isBlockingActive) {
+      try {
+        await reportStatusToApp();
+      } catch (e) {
+        console.debug("[GTFB Background] Error reporting status on schedule activation:", e);
+      }
+    }
   } else {
     if (isBlockingActive) {
       console.log("[GTFB Background] Scheduled bedtime window passed. Disabling blocking.");
@@ -110,6 +123,13 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
     }
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       await chrome.storage.local.set({ isBlockingActive: false });
+    }
+    if (isBlockingActive) {
+      try {
+        await reportStatusToApp();
+      } catch (e) {
+        console.debug("[GTFB Background] Error reporting status on schedule deactivation:", e);
+      }
     }
   }
 }
@@ -214,6 +234,12 @@ export async function handleToggle(enable, options = {}) {
       console.log("[GTFB Background] Blocking manually enabled.");
     }
 
+    try {
+      await reportStatusToApp();
+    } catch (e) {
+      console.debug("[GTFB Background] Error reporting status after toggle enable:", e);
+    }
+
     return {
       success: true,
       isBlockingActive: true,
@@ -229,6 +255,12 @@ export async function handleToggle(enable, options = {}) {
       await chrome.action.setBadgeText({ text: "" });
     }
     console.log("[GTFB Background] Blocking manually disabled.");
+
+    try {
+      await reportStatusToApp();
+    } catch (e) {
+      console.debug("[GTFB Background] Error reporting status after toggle disable:", e);
+    }
 
     return {
       success: true,
@@ -293,6 +325,13 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    if (message.action === "REPORT_STATUS") {
+      reportStatusToApp(message.apiPort)
+        .then((res) => sendResponse(res))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
     return false;
   });
 }
@@ -346,5 +385,6 @@ export {
   fetchConfigFromApp,
   setupSyncAlarm,
   SYNC_ALARM_NAME,
-  getSyncStatus
+  getSyncStatus,
+  reportStatusToApp
 };
