@@ -1,0 +1,118 @@
+# -*- mode: python ; coding: utf-8 -*-
+import os
+from pathlib import Path
+
+block_cipher = None
+
+# Dynamically resolve directories from SPECPATH
+try:
+    spec_dir = Path(SPECPATH).resolve()
+    repo_root = spec_dir.parent.parent
+except NameError:
+    repo_root = Path(__file__).resolve().parent.parent
+
+assets_dir = str(repo_root / "assets")
+extension_dir = str(repo_root / "extension")
+app_py = str(repo_root / "src" / "gtfb" / "app.py")
+src_dir = str(repo_root / "src")
+icon_path = str(repo_root / "assets" / "icons" / "icon.icns")
+
+datas = [
+    (assets_dir, "assets"),
+    (extension_dir, "extension"),
+]
+
+hiddenimports = [
+    "pystray._darwin",
+    "AppKit",
+    "Foundation",
+    "rubicon.objc",
+    "PIL._tkinter_finder",
+    "tkinter",
+    "tkinter.ttk",
+    "tkinter.messagebox",
+    "gtfb",
+    "gtfb.app",
+    "gtfb.config",
+    "gtfb.config.models",
+    "gtfb.config.storage",
+    "gtfb.config.sanitizer",
+    "gtfb.core",
+    "gtfb.core.scheduler",
+    "gtfb.core.closer",
+    "gtfb.core.platform_utils",
+    "gtfb.core.extension_installer",
+    "gtfb.ui",
+    "gtfb.ui.tray",
+    "gtfb.ui.icons",
+    "gtfb.ui.manager",
+    "gtfb.ui.settings_window",
+    "gtfb.ui.extension_dialog",
+    "gtfb.api",
+    "gtfb.api.server",
+    "gtfb.api.handler",
+    "gtfb.api.status_store",
+]
+
+a = Analysis(
+    [app_py],
+    pathex=[src_dir],
+    binaries=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="gtfb",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="gtfb",
+)
+
+app = BUNDLE(
+    coll,
+    name="GTFB.app",
+    icon=icon_path,
+    bundle_identifier="com.gtfb.app",
+    info_plist={
+        "CFBundleName": "GTFB",
+        "CFBundleDisplayName": "GTFB",
+        "CFBundleIdentifier": "com.gtfb.app",
+        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleVersion": "1.0.0",
+        "LSUIElement": True,  # Menu bar only, no Dock icon
+        "NSHighResolutionCapable": True,
+        "NSRequiresAquaSystemAppearance": False,
+    },
+)
