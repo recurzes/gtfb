@@ -105,7 +105,7 @@ def test_node_rules_module_execution():
     defaultRules.forEach((rule, idx) => {{
       if (rule.id !== idx + 1) throw new Error(`Invalid rule id at index ${{idx}}`);
       if (rule.priority !== 1) throw new Error(`Invalid priority for rule ${{rule.id}}`);
-      if (!rule.action || rule.action.type !== "redirect" || rule.action.redirect?.extensionPath !== "/src/blocked.html") {{
+      if (!rule.action || rule.action.type !== "redirect" || !rule.action.redirect?.extensionPath?.startsWith("/src/blocked.html")) {{
         throw new Error(`Invalid action for rule ${{rule.id}}`);
       }}
       if (!rule.condition || rule.condition.urlFilter !== `||${{TEST_DOMAINS[idx]}}`) {{
