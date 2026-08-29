@@ -3,6 +3,8 @@
  * DeclarativeNetRequest Rule Compiler & Manager
  */
 
+import { getActiveDomains } from "./storage.js";
+
 export const TEST_DOMAINS = [
   "reddit.com",
   "youtube.com",
@@ -63,13 +65,22 @@ export function compileBlockRules(domains = TEST_DOMAINS) {
 
 /**
  * Applies dynamic blocking rules to chrome.declarativeNetRequest engine.
- * @param {string[]} domains - Optional custom domain list, defaults to TEST_DOMAINS
+ * @param {string[]|null} [domains] - Optional custom domain list. If omitted or null, queries getActiveDomains() from storage.
  * @returns {Promise<Array<object>>} The applied rules
  */
-export async function applyBlockRules(domains = TEST_DOMAINS) {
+export async function applyBlockRules(domains = null) {
+  let targetDomains = domains;
+  if (!targetDomains) {
+    try {
+      targetDomains = await getActiveDomains();
+    } catch (e) {
+      targetDomains = TEST_DOMAINS;
+    }
+  }
+
   const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
   const removeRuleIds = existingRules.map((r) => r.id);
-  const addRules = compileBlockRules(domains);
+  const addRules = compileBlockRules(targetDomains);
 
   await chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: removeRuleIds,

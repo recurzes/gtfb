@@ -5,6 +5,7 @@
 
 import { applyBlockRules, clearBlockRules } from "./rules.js";
 import { isTimeInWindow } from "./scheduler_utils.js";
+import { getCachedConfig, getActiveDomains } from "./storage.js";
 
 export const DEFAULT_SCHEDULE = {
   enabled: true,
@@ -27,32 +28,44 @@ export function setupScheduleAlarm() {
 
 /**
  * Evaluates current time against the scheduled window and applies or clears block rules accordingly.
+ * Reads schedule configurations from cachedConfig in chrome.storage.local.
  * @param {Date|null} [nowOverride] - Optional override for current time (testing)
  * @param {object|null} [scheduleOverride] - Optional override for schedule config (testing)
  * @returns {Promise<void>}
  */
 export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverride = null) {
   const now = nowOverride || new Date();
-  let schedule = scheduleOverride || DEFAULT_SCHEDULE;
+  let shouldBlock = false;
 
-  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local && !scheduleOverride) {
-    const data = await chrome.storage.local.get("schedule");
-    if (data && data.schedule) {
-      schedule = data.schedule;
+  if (scheduleOverride) {
+    const enabled = scheduleOverride.enabled !== undefined
+      ? scheduleOverride.enabled
+      : (scheduleOverride.active !== undefined ? scheduleOverride.active : true);
+    if (enabled) {
+      const startH = scheduleOverride.startHour ?? scheduleOverride.start_hour ?? 22;
+      const startM = scheduleOverride.startMinute ?? scheduleOverride.start_minute ?? 0;
+      const endH = scheduleOverride.endHour ?? scheduleOverride.end_hour ?? 6;
+      const endM = scheduleOverride.endMinute ?? scheduleOverride.end_minute ?? 0;
+      shouldBlock = isTimeInWindow(now, startH, startM, endH, endM);
+    }
+  } else {
+    // Read from cachedConfig in chrome.storage.local
+    const config = await getCachedConfig();
+    if (config && Array.isArray(config.block_rules)) {
+      for (const rule of config.block_rules) {
+        if (rule && (rule.active !== false)) {
+          const startH = rule.start_hour ?? rule.startHour ?? 22;
+          const startM = rule.start_minute ?? rule.startMinute ?? 0;
+          const endH = rule.end_hour ?? rule.endHour ?? 6;
+          const endM = rule.end_minute ?? rule.endMinute ?? 0;
+          if (isTimeInWindow(now, startH, startM, endH, endM)) {
+            shouldBlock = true;
+            break;
+          }
+        }
+      }
     }
   }
-
-  if (!schedule || !schedule.enabled) {
-    return;
-  }
-
-  const shouldBlock = isTimeInWindow(
-    now,
-    schedule.startHour,
-    schedule.startMinute,
-    schedule.endHour,
-    schedule.endMinute
-  );
 
   let isBlockingActive = false;
   let isLocked = false;

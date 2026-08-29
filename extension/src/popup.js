@@ -3,6 +3,8 @@
  * Extension Action Popup Script
  */
 
+import { getActiveDomains } from "./storage.js";
+
 let countdownInterval = null;
 let selectedDurationMinutes = 25;
 
@@ -15,6 +17,22 @@ export function formatTime(totalSeconds) {
   const mins = Math.floor(Math.max(0, totalSeconds) / 60);
   const secs = Math.floor(Math.max(0, totalSeconds) % 60);
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Refreshes the domain count display in the popup footer from cachedConfig.
+ */
+export async function refreshDomainCount() {
+  try {
+    const domainCountElem = document.getElementById("domainCount");
+    if (domainCountElem) {
+      const domains = await getActiveDomains();
+      const count = Array.isArray(domains) ? domains.length : 0;
+      domainCountElem.textContent = `${count} domain${count === 1 ? "" : "s"} configured`;
+    }
+  } catch (err) {
+    console.error("[GTFB Popup] Failed to refresh domain count:", err);
+  }
 }
 
 /**
@@ -103,6 +121,7 @@ export function updateUI(status = {}) {
  */
 export async function fetchAndRefreshStatus() {
   try {
+    refreshDomainCount();
     if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
       chrome.runtime.sendMessage({ action: "GET_BLOCKING_STATUS" }, (response) => {
         if (chrome.runtime.lastError || !response) {
@@ -202,17 +221,23 @@ export function setupPopupListeners() {
   // Listen for storage changes from background or other tabs
   if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "local" && (changes.isBlockingActive || changes.lockedUntil)) {
-        fetchAndRefreshStatus();
+      if (area === "local") {
+        if (changes.isBlockingActive || changes.lockedUntil) {
+          fetchAndRefreshStatus();
+        }
+        if (changes.cachedConfig) {
+          refreshDomainCount();
+        }
       }
     });
   }
 }
 
 // Initialize on DOM load
-if (typeof document !== "undefined") {
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
   document.addEventListener("DOMContentLoaded", () => {
     setupPopupListeners();
     fetchAndRefreshStatus();
+    refreshDomainCount();
   });
 }
