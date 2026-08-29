@@ -1,18 +1,21 @@
 """Embedded HTTP server for GTFB localhost communication."""
 
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 import ipaddress
 import json
 import logging
 import os
 from pathlib import Path
+import queue
 import threading
 from typing import Any, Callable, Optional, Type, Union
 
 from gtfb.api.handler import GTFBRequestHandler
 from gtfb.api.status_store import ExtensionStatusStore
 from gtfb.config.storage import get_config_dir
+
+import sys
 
 logger = logging.getLogger("gtfb.api")
 
@@ -32,7 +35,26 @@ def _is_loopback_host(host: str) -> bool:
         return False
 
 
+class ThreadedAPIServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that suppresses normal client disconnect errors."""
+
+    daemon_threads = True
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        exc_type, exc_val, _ = sys.exc_info()
+        if exc_type in (
+            ConnectionResetError,
+            ConnectionAbortedError,
+            BrokenPipeError,
+            TimeoutError,
+        ) or (isinstance(exc_val, OSError) and getattr(exc_val, "winerror", None) in (10053, 10054)):
+            logger.debug("Client %s disconnected: %s", client_address, exc_val)
+            return
+        super().handle_error(request, client_address)
+
+
 class APIServer:
+
     """Lightweight local HTTP server bound strictly to loopback interfaces with port fallback."""
 
     def __init__(
@@ -67,8 +89,44 @@ class APIServer:
         self.config_dir: Optional[Path] = (
             Path(config_dir) if config_dir is not None else None
         )
-        self.server: Optional[HTTPServer] = None
+        self.server: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
+        self._sse_clients: list[queue.Queue] = []
+        self._sse_lock = threading.Lock()
+
+    def register_sse_client(self, client_queue: queue.Queue) -> None:
+        """Register a new SSE event listener queue."""
+        with self._sse_lock:
+            self._sse_clients.append(client_queue)
+
+    def unregister_sse_client(self, client_queue: queue.Queue) -> None:
+        """Unregister an SSE event listener queue."""
+        with self._sse_lock:
+            if client_queue in self._sse_clients:
+                self._sse_clients.remove(client_queue)
+
+    def notify_config_changed(self, config_profile: Any) -> None:
+        """Broadcast updated configuration event to all active SSE browser extension clients."""
+        if hasattr(config_profile, "to_dict"):
+            cfg_dict = config_profile.to_dict()
+        elif isinstance(config_profile, dict):
+            cfg_dict = config_profile
+        else:
+            cfg_dict = dict(config_profile)
+
+        event = {
+            "type": "config_updated",
+            "config": cfg_dict,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        with self._sse_lock:
+            for q in list(self._sse_clients):
+                try:
+                    q.put_nowait(event)
+                except Exception as err:
+                    logger.debug("Error delivering SSE event to client queue: %s", err)
+
 
     @property
     def is_running(self) -> bool:
@@ -113,7 +171,7 @@ class APIServer:
 
         for port in range(self.start_port, self.max_port + 1):
             try:
-                self.server = HTTPServer((self.host, port), self.handler_cls)
+                self.server = ThreadedAPIServer((self.host, port), self.handler_cls)
                 self.bound_port = port
                 self.port = port
                 self._write_port_file(port)
@@ -121,6 +179,7 @@ class APIServer:
                 break
             except OSError as e:
                 logger.warning("Port %d in use, attempting next port: %s", port, e)
+
 
         if not self.server or self.bound_port is None:
             raise RuntimeError(
@@ -131,6 +190,7 @@ class APIServer:
             self.server.config_provider = self.config_provider
         if self.status_store is not None:
             self.server.status_store = self.status_store
+        self.server.api_server_instance = self
 
         self._thread = threading.Thread(
             target=self.server.serve_forever,
@@ -142,6 +202,14 @@ class APIServer:
 
     def stop(self) -> None:
         """Gracefully stop and close the local HTTP server and clean up port file."""
+        with self._sse_lock:
+            for q in list(self._sse_clients):
+                try:
+                    q.put_nowait(None)
+                except Exception:
+                    pass
+            self._sse_clients.clear()
+
         if self.server:
             try:
                 self.server.shutdown()
@@ -156,3 +224,4 @@ class APIServer:
         self.bound_port = None
         self._cleanup_port_file()
         logger.info("Local API server stopped.")
+
