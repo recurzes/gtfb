@@ -4,6 +4,7 @@
  */
 
 import { getActiveDomains } from "./storage.js";
+import { extApi } from "./compat.js";
 
 export const TEST_DOMAINS = [
   "reddit.com",
@@ -33,7 +34,7 @@ export function sanitizeDomain(domain) {
 }
 
 /**
- * Compiles a list of domains into chrome.declarativeNetRequest Rule objects.
+ * Compiles a list of domains into declarativeNetRequest Rule objects.
  * @param {string[]} domains - List of domain strings to block
  * @returns {Array<object>} Array of declarativeNetRequest rule objects
  */
@@ -80,14 +81,15 @@ export async function syncAndApplyRules(config) {
     }
   }
 
-  const existingRules = (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.getDynamicRules)
-    ? await chrome.declarativeNetRequest.getDynamicRules()
+  const dnr = extApi.declarativeNetRequest;
+  const existingRules = (dnr && typeof dnr.getDynamicRules === "function")
+    ? await dnr.getDynamicRules()
     : [];
   const removeRuleIds = existingRules.map((r) => r.id);
   const addRules = compileBlockRules(domains);
 
-  if (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.updateDynamicRules) {
-    await chrome.declarativeNetRequest.updateDynamicRules({
+  if (dnr && typeof dnr.updateDynamicRules === "function") {
+    await dnr.updateDynamicRules({
       removeRuleIds: removeRuleIds,
       addRules: addRules
     });
@@ -98,7 +100,7 @@ export async function syncAndApplyRules(config) {
 }
 
 /**
- * Applies dynamic blocking rules to chrome.declarativeNetRequest engine.
+ * Applies dynamic blocking rules to declarativeNetRequest engine.
  * @param {string[]|null} [domains] - Optional custom domain list. If omitted or null, queries getActiveDomains() from storage.
  * @returns {Promise<Array<object>>} The applied rules
  */
@@ -112,14 +114,15 @@ export async function applyBlockRules(domains = null) {
     }
   }
 
-  const existingRules = (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.getDynamicRules)
-    ? await chrome.declarativeNetRequest.getDynamicRules()
+  const dnr = extApi.declarativeNetRequest;
+  const existingRules = (dnr && typeof dnr.getDynamicRules === "function")
+    ? await dnr.getDynamicRules()
     : [];
   const removeRuleIds = existingRules.map((r) => r.id);
   const addRules = compileBlockRules(targetDomains);
 
-  if (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.updateDynamicRules) {
-    await chrome.declarativeNetRequest.updateDynamicRules({
+  if (dnr && typeof dnr.updateDynamicRules === "function") {
+    await dnr.updateDynamicRules({
       removeRuleIds: removeRuleIds,
       addRules: addRules
     });
@@ -134,13 +137,14 @@ export async function applyBlockRules(domains = null) {
  * @returns {Promise<void>}
  */
 export async function clearBlockRules() {
-  const existingRules = (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.getDynamicRules)
-    ? await chrome.declarativeNetRequest.getDynamicRules()
+  const dnr = extApi.declarativeNetRequest;
+  const existingRules = (dnr && typeof dnr.getDynamicRules === "function")
+    ? await dnr.getDynamicRules()
     : [];
   const removeRuleIds = existingRules.map((r) => r.id);
 
-  if (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.updateDynamicRules) {
-    await chrome.declarativeNetRequest.updateDynamicRules({
+  if (dnr && typeof dnr.updateDynamicRules === "function") {
+    await dnr.updateDynamicRules({
       removeRuleIds: removeRuleIds,
       addRules: []
     });
@@ -148,3 +152,4 @@ export async function clearBlockRules() {
 
   console.log("[GTFB] Cleared all blocking rules.");
 }
+

@@ -4,6 +4,7 @@
  */
 
 import { saveCachedConfig } from "./storage.js";
+import { extApi } from "./compat.js";
 
 export const START_PORT = 8765;
 export const MAX_PORT = 8775;
@@ -15,8 +16,8 @@ export const DEFAULT_TIMEOUT_MS = 2000;
  * @param {number} [periodInMinutes=1]
  */
 export function setupSyncAlarm(periodInMinutes = 1) {
-  if (typeof chrome !== "undefined" && chrome.alarms && chrome.alarms.create) {
-    chrome.alarms.create(SYNC_ALARM_NAME, {
+  if (extApi.alarms && typeof extApi.alarms.create === "function") {
+    extApi.alarms.create(SYNC_ALARM_NAME, {
       periodInMinutes: periodInMinutes
     });
   }
@@ -62,8 +63,8 @@ export async function fetchConfigFromApp(
 
   if (configData && activePort) {
     await saveCachedConfig(configData);
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      await chrome.storage.local.set({
+    if (extApi.storage && extApi.storage.local) {
+      await extApi.storage.local.set({
         isConnected: true,
         apiPort: activePort,
         lastSyncSuccess: Date.now()
@@ -88,8 +89,8 @@ export async function fetchConfigFromApp(
 
     return { success: true, config: configData, port: activePort };
   } else {
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      await chrome.storage.local.set({ isConnected: false });
+    if (extApi.storage && extApi.storage.local) {
+      await extApi.storage.local.set({ isConnected: false });
     }
     console.warn("[GTFB Sync] Desktop app not reachable on localhost.");
     return { success: false };
@@ -108,8 +109,8 @@ export async function reportStatusToApp(apiPort = null) {
     let targetPort = apiPort;
     let isBlockingActive = false;
 
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      const stored = await chrome.storage.local.get(["isBlockingActive", "apiPort", "lockedUntil"]);
+    if (extApi.storage && extApi.storage.local) {
+      const stored = await extApi.storage.local.get(["isBlockingActive", "apiPort", "lockedUntil"]);
       if (stored) {
         if (!targetPort && typeof stored.apiPort === "number") {
           targetPort = stored.apiPort;
@@ -126,11 +127,10 @@ export async function reportStatusToApp(apiPort = null) {
 
     let rulesCount = 0;
     if (
-      typeof chrome !== "undefined" &&
-      chrome.declarativeNetRequest &&
-      typeof chrome.declarativeNetRequest.getDynamicRules === "function"
+      extApi.declarativeNetRequest &&
+      typeof extApi.declarativeNetRequest.getDynamicRules === "function"
     ) {
-      const dynamicRules = await chrome.declarativeNetRequest.getDynamicRules();
+      const dynamicRules = await extApi.declarativeNetRequest.getDynamicRules();
       rulesCount = Array.isArray(dynamicRules) ? dynamicRules.length : 0;
     }
 
@@ -146,11 +146,10 @@ export async function reportStatusToApp(apiPort = null) {
 
     let version = "1.0.0";
     if (
-      typeof chrome !== "undefined" &&
-      chrome.runtime &&
-      typeof chrome.runtime.getManifest === "function"
+      extApi.runtime &&
+      typeof extApi.runtime.getManifest === "function"
     ) {
-      const manifest = chrome.runtime.getManifest();
+      const manifest = extApi.runtime.getManifest();
       if (manifest && manifest.version) {
         version = manifest.version;
       }
@@ -196,13 +195,14 @@ export async function reportStatusToApp(apiPort = null) {
  * @returns {Promise<{ isConnected: boolean, apiPort: number, lastSyncSuccess: number|null }>}
  */
 export async function getSyncStatus() {
-  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+  if (!extApi.storage || !extApi.storage.local) {
     return { isConnected: false, apiPort: START_PORT, lastSyncSuccess: null };
   }
-  const data = await chrome.storage.local.get(["isConnected", "apiPort", "lastSyncSuccess"]);
+  const data = await extApi.storage.local.get(["isConnected", "apiPort", "lastSyncSuccess"]);
   return {
     isConnected: Boolean(data.isConnected),
     apiPort: (data && typeof data.apiPort === "number") ? data.apiPort : START_PORT,
     lastSyncSuccess: data?.lastSyncSuccess || null
   };
 }
+

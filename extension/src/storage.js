@@ -3,6 +3,8 @@
  * Storage Cache Wrapper Module
  */
 
+import { extApi } from "./compat.js";
+
 export const DEFAULT_CONFIG = {
   version: 1,
   profile_name: "Default",
@@ -26,15 +28,16 @@ export const DEFAULT_CONFIG = {
 export const DEFAULT_API_PORT = 8765;
 
 /**
- * Retrieves the cached configuration from chrome.storage.local.
+ * Retrieves the cached configuration from storage.
  * If storage is empty, saves and returns the default configuration.
  * @returns {Promise<object>} The cached configuration object
  */
 export async function getCachedConfig() {
-  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+  const storage = extApi.storage?.local;
+  if (!storage || typeof storage.get !== "function") {
     return DEFAULT_CONFIG;
   }
-  const data = await chrome.storage.local.get("cachedConfig");
+  const data = await storage.get("cachedConfig");
   if (!data || !data.cachedConfig) {
     await saveCachedConfig(DEFAULT_CONFIG);
     return DEFAULT_CONFIG;
@@ -43,15 +46,16 @@ export async function getCachedConfig() {
 }
 
 /**
- * Saves configuration to chrome.storage.local and updates lastSyncedAt.
+ * Saves configuration to storage and updates lastSyncedAt.
  * @param {object} config - Configuration object to persist
  * @returns {Promise<void>}
  */
 export async function saveCachedConfig(config) {
-  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+  const storage = extApi.storage?.local;
+  if (!storage || typeof storage.set !== "function") {
     return;
   }
-  await chrome.storage.local.set({
+  await storage.set({
     cachedConfig: config,
     lastSyncedAt: Date.now()
   });
@@ -79,10 +83,11 @@ export async function getActiveDomains() {
  * @returns {Promise<number>}
  */
 export async function getApiPort() {
-  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+  const storage = extApi.storage?.local;
+  if (!storage || typeof storage.get !== "function") {
     return DEFAULT_API_PORT;
   }
-  const data = await chrome.storage.local.get("apiPort");
+  const data = await storage.get("apiPort");
   return (data && typeof data.apiPort === "number") ? data.apiPort : DEFAULT_API_PORT;
 }
 
@@ -92,10 +97,11 @@ export async function getApiPort() {
  * @returns {Promise<void>}
  */
 export async function setApiPort(port) {
-  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+  const storage = extApi.storage?.local;
+  if (!storage || typeof storage.set !== "function") {
     return;
   }
-  await chrome.storage.local.set({ apiPort: port });
+  await storage.set({ apiPort: port });
 }
 
 /**
@@ -103,9 +109,11 @@ export async function setApiPort(port) {
  * @returns {Promise<number|null>}
  */
 export async function getLastSyncedAt() {
-  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+  const storage = extApi.storage?.local;
+  if (!storage || typeof storage.get !== "function") {
     return null;
   }
-  const data = await chrome.storage.local.get("lastSyncedAt");
+  const data = await storage.get("lastSyncedAt");
   return data?.lastSyncedAt || null;
 }
+
