@@ -77,16 +77,25 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
 
   let isBlockingActive = false;
   let isLocked = false;
+  let manualOverride = false;
 
   if (extApi.storage && extApi.storage.local) {
     const status = await getBlockingStatus();
     isBlockingActive = status.isBlockingActive;
     isLocked = status.isLocked;
+    const stored = await extApi.storage.local.get(["manualOverride"]);
+    manualOverride = Boolean(stored && stored.manualOverride);
   }
 
-  // If focus lock is currently active, do not disengage blocking but ensure rules are applied
+  // If focus lock is currently active, ensure rules are applied with focus lock state
   if (isLocked) {
     await applyBlockRules();
+    if (extApi.action && typeof extApi.action.setBadgeText === "function") {
+      await extApi.action.setBadgeText({ text: "LOCK" });
+      if (typeof extApi.action.setBadgeBackgroundColor === "function") {
+        await extApi.action.setBadgeBackgroundColor({ color: "#8B5CF6" });
+      }
+    }
     try {
       await reportStatusToApp();
     } catch (e) {
@@ -95,8 +104,7 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
     return;
   }
 
-  if (shouldBlock) {
-    console.log("[GTFB Background] Scheduled bedtime window active. Enabling blocking.");
+  if (shouldBlock || manualOverride) {
     await applyBlockRules();
     if (extApi.action && typeof extApi.action.setBadgeText === "function") {
       await extApi.action.setBadgeText({ text: "ON" });
@@ -107,17 +115,13 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
     if (extApi.storage && extApi.storage.local) {
       await extApi.storage.local.set({ isBlockingActive: true });
     }
-    if (!isBlockingActive) {
-      try {
-        await reportStatusToApp();
-      } catch (e) {
-        console.debug("[GTFB Background] Error reporting status on schedule activation:", e);
-      }
+
+    try {
+      await reportStatusToApp();
+    } catch (e) {
+      console.debug("[GTFB Background] Error reporting status on schedule/rule update:", e);
     }
   } else {
-    if (isBlockingActive) {
-      console.log("[GTFB Background] Scheduled bedtime window passed. Disabling blocking.");
-    }
     await clearBlockRules();
     if (extApi.action && typeof extApi.action.setBadgeText === "function") {
       await extApi.action.setBadgeText({ text: "" });
@@ -125,14 +129,13 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
     if (extApi.storage && extApi.storage.local) {
       await extApi.storage.local.set({ isBlockingActive: false });
     }
-    if (isBlockingActive) {
-      try {
-        await reportStatusToApp();
-      } catch (e) {
-        console.debug("[GTFB Background] Error reporting status on schedule deactivation:", e);
-      }
+    try {
+      await reportStatusToApp();
+    } catch (e) {
+      console.debug("[GTFB Background] Error reporting status on schedule deactivation:", e);
     }
   }
+
 }
 
 // Alarm listener
@@ -217,7 +220,7 @@ export async function handleToggle(enable, options = {}) {
     if (durationMinutes > 0) {
       lockedUntil = now + Math.round(durationMinutes * 60 * 1000);
       if (extApi.storage && extApi.storage.local) {
-        await extApi.storage.local.set({ isBlockingActive: true, lockedUntil });
+        await extApi.storage.local.set({ isBlockingActive: true, manualOverride: true, lockedUntil });
       }
       if (extApi.action && typeof extApi.action.setBadgeText === "function") {
         await extApi.action.setBadgeText({ text: "LOCK" });
@@ -228,7 +231,7 @@ export async function handleToggle(enable, options = {}) {
       console.log(`[GTFB Background] Focus Lock activated for ${durationMinutes} minutes.`);
     } else {
       if (extApi.storage && extApi.storage.local) {
-        await extApi.storage.local.set({ isBlockingActive: true, lockedUntil: null });
+        await extApi.storage.local.set({ isBlockingActive: true, manualOverride: true, lockedUntil: null });
       }
       if (extApi.action && typeof extApi.action.setBadgeText === "function") {
         await extApi.action.setBadgeText({ text: "ON" });
@@ -254,7 +257,7 @@ export async function handleToggle(enable, options = {}) {
   } else {
     await clearBlockRules();
     if (extApi.storage && extApi.storage.local) {
-      await extApi.storage.local.set({ isBlockingActive: false, lockedUntil: null });
+      await extApi.storage.local.set({ isBlockingActive: false, manualOverride: false, lockedUntil: null });
     }
     if (extApi.action && typeof extApi.action.setBadgeText === "function") {
       await extApi.action.setBadgeText({ text: "" });
@@ -275,6 +278,7 @@ export async function handleToggle(enable, options = {}) {
     };
   }
 }
+
 
 /**
  * Starts a Focus Lock session for a specified duration in minutes.

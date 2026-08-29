@@ -46,18 +46,13 @@ def test_manifest_firefox_gecko_settings():
     assert gecko_settings.get("id") == "gtfb@local.dev", "Gecko ID must be gtfb@local.dev"
     assert gecko_settings.get("strict_min_version") == "109.0", "Gecko strict_min_version must be 109.0"
 
-    # 3. Background scripts compatibility for Firefox & Chromium
+    # 3. Background service worker compatibility for Firefox & Chromium
     background = manifest.get("background", {})
     assert background.get("service_worker") == "src/background.js"
     assert background.get("type") == "module"
+    worker_file = EXTENSION_DIR / "src" / "background.js"
+    assert worker_file.is_file(), f"Background worker script not found: {worker_file}"
 
-    scripts = background.get("scripts", [])
-    assert "lib/browser-polyfill.min.js" in scripts
-    assert "src/background.js" in scripts
-
-    for script in scripts:
-        script_file = EXTENSION_DIR / script
-        assert script_file.is_file(), f"Background script declared in manifest not found: {script_file}"
 
 
 def test_node_compat_api_resolution():

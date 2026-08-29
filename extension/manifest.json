@@ -9,16 +9,17 @@
     "alarms"
   ],
   "host_permissions": [
-    "*://*/*"
+    "*://*/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://127.0.0.1:*/*",
+    "http://localhost:*/*"
   ],
   "background": {
     "service_worker": "src/background.js",
-    "type": "module",
-    "scripts": [
-      "lib/browser-polyfill.min.js",
-      "src/background.js"
-    ]
+    "type": "module"
   },
+
   "browser_specific_settings": {
     "gecko": {
       "id": "gtfb@local.dev",

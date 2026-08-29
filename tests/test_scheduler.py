@@ -40,22 +40,31 @@ class TestBedtimeScheduler(unittest.TestCase):
         self.assertEqual(scheduler.closer_fn, mock_closer)
 
     def test_get_next_target_future(self):
-        now = datetime.now()
-        future_dt = now + timedelta(hours=3)
+        fixed_now = datetime(2026, 8, 29, 10, 0, 0)
+        future_dt = fixed_now + timedelta(hours=3)
         scheduler = BedtimeScheduler(target_hour=future_dt.hour, target_minute=future_dt.minute)
-        target = scheduler.get_next_target()
-        self.assertEqual(target.hour, future_dt.hour)
-        self.assertEqual(target.minute, future_dt.minute)
-        self.assertEqual(target.date(), now.date())
+        with patch("gtfb.core.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            target = scheduler.get_next_target()
+            self.assertEqual(target.hour, future_dt.hour)
+            self.assertEqual(target.minute, future_dt.minute)
+            self.assertEqual(target.date(), fixed_now.date())
 
     def test_get_next_target_past_wraps_tomorrow(self):
-        now = datetime.now()
-        past_dt = now - timedelta(hours=3)
+        fixed_now = datetime(2026, 8, 29, 15, 0, 0)
+        past_dt = fixed_now - timedelta(hours=3)
         scheduler = BedtimeScheduler(target_hour=past_dt.hour, target_minute=past_dt.minute)
-        target = scheduler.get_next_target()
-        self.assertEqual(target.hour, past_dt.hour)
-        self.assertEqual(target.minute, past_dt.minute)
-        self.assertEqual(target.date(), (now + timedelta(days=1)).date())
+        with patch("gtfb.core.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            target = scheduler.get_next_target()
+            self.assertEqual(target.hour, past_dt.hour)
+            self.assertEqual(target.minute, past_dt.minute)
+            self.assertEqual(target.date(), (fixed_now + timedelta(days=1)).date())
+
 
     def test_start_and_stop_lifecycle(self):
         scheduler = BedtimeScheduler(check_interval=0.05)

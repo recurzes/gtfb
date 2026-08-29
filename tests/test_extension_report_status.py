@@ -168,7 +168,7 @@ def test_node_report_status_payload_schema_and_headers():
 
 
 def test_node_browser_vendor_detection():
-    """Verify Edge, Firefox, and Chrome browser detection from navigator.userAgent."""
+    """Verify Brave, Edge, Firefox, and Chrome browser detection from navigator API and userAgent."""
     sync_path = SRC_DIR / "sync.js"
 
     js_test_script = f"""
@@ -197,9 +197,24 @@ def test_node_browser_vendor_detection():
       return {{ ok: true, status: 200, json: async () => ({{ status: "received" }}) }};
     }};
 
-    const {{ reportStatusToApp }} = await import('{sync_path.as_uri()}');
+    const {{ reportStatusToApp, detectBrowser }} = await import('{sync_path.as_uri()}');
 
-    // 1. Edge detection
+    // 1. Brave detection via navigator.brave.isBrave()
+    globalThis.navigator.brave = {{
+      isBrave: async () => true
+    }};
+    Object.defineProperty(globalThis.navigator, "userAgent", {{
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      configurable: true,
+      writable: true
+    }});
+    await reportStatusToApp(8765);
+    if (capturedPayload.browser !== "brave") {{
+      throw new Error(`Expected 'brave', got: ${{capturedPayload.browser}}`);
+    }}
+    delete globalThis.navigator.brave;
+
+    // 2. Edge detection
     Object.defineProperty(globalThis.navigator, "userAgent", {{
       value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.2210.91",
       configurable: true,
@@ -210,7 +225,7 @@ def test_node_browser_vendor_detection():
       throw new Error(`Expected 'edge', got: ${{capturedPayload.browser}}`);
     }}
 
-    // 2. Firefox detection
+    // 3. Firefox detection
     Object.defineProperty(globalThis.navigator, "userAgent", {{
       value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
       configurable: true,
@@ -221,7 +236,7 @@ def test_node_browser_vendor_detection():
       throw new Error(`Expected 'firefox', got: ${{capturedPayload.browser}}`);
     }}
 
-    // 3. Chrome detection
+    // 4. Chrome detection
     Object.defineProperty(globalThis.navigator, "userAgent", {{
       value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       configurable: true,
@@ -243,6 +258,7 @@ def test_node_browser_vendor_detection():
     )
     assert res.returncode == 0, f"Node script failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
     assert "VENDOR_DETECTION_TEST_PASSED" in res.stdout
+
 
 
 def test_node_offline_graceful_handling():

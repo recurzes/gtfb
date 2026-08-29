@@ -20,3 +20,8 @@ gtfb = "gtfb.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gtfb"]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.22.2",
+]

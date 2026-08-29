@@ -67,10 +67,31 @@ gtfb --hour 22 --minute 30 --no-shutdown
 gtfb
 ```
 
+### Windows Standalone Executable (.exe)
+
+You can build a windowless standalone `gtfb.exe` binary that runs without requiring Python installed:
+
+```powershell
+# Run the automated Windows build
+python scripts/build_windows.py
+
+# Or double-click scripts/build_windows.bat in File Explorer
+```
+
+For a comprehensive, beginner-friendly walkthrough, see the [Windows Build Guide](docs/BUILD_WINDOWS.md).
+
+### Browser Companion Extension
+
+GTFB includes a companion browser extension for Google Chrome, Microsoft Edge, Brave, and Mozilla Firefox that blocks distracting websites and synchronizes rules with the desktop application.
+
+- On first launch, GTFB prompts for consent to deploy the extension to your profile (`%APPDATA%/GTFB/extension`) and opens the Extension Setup Assistant.
+- You can also re-open the setup assistant anytime from the system tray menu via **Extension Setup...**.
+
 For detailed platform prerequisites (Linux AppIndicator packages, macOS permissions, Windows specifics), see [docs/cross-platform.md](docs/cross-platform.md).
 
 ### Running Tests
 
 ```bash
-uv run python -m unittest discover tests -v
+uv run pytest
 ```
+
