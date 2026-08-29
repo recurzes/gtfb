@@ -208,19 +208,24 @@ class BlocklistSection(ttk.LabelFrame):
 
 
 class SettingsWindow:
-    """GTFB Desktop Settings Window (Singleton)."""
+    """GTFB Desktop Settings Window."""
 
     _instance: Optional["SettingsWindow"] = None
     _lock = threading.Lock()
 
     def __init__(
         self,
+        master: Optional[tk.Misc] = None,
         config: Optional[ConfigProfile] = None,
         on_save_callback: Optional[Callable[[Any], None]] = None,
+        on_close_callback: Optional[Callable[[], None]] = None,
     ) -> None:
+        self.master = master
         self.config: ConfigProfile = config if config is not None else load_config()
         self.on_save_callback = on_save_callback
-        self.root: Optional[tk.Tk] = None
+        self.on_close_callback = on_close_callback
+        self.window: Optional[tk.Toplevel | tk.Tk] = None
+        self.root: Optional[tk.Toplevel | tk.Tk] = None
         self._icon_img: Optional[tk.PhotoImage] = None
         self.bedtime_section: Optional[BedtimeSection] = None
         self.blocklist_section: Optional[BlocklistSection] = None
@@ -238,15 +243,19 @@ class SettingsWindow:
     ) -> "SettingsWindow":
         """Open settings window or bring existing window into focus."""
         with cls._lock:
-            if cls._instance and cls._instance.root:
-                try:
-                    if cls._instance.root.winfo_exists():
-                        if on_save_callback is not None:
-                            cls._instance.on_save_callback = on_save_callback
-                        cls._instance._bring_to_front()
-                        return cls._instance
-                except Exception as err:
-                    logger.debug("Error checking existing settings window: %s", err)
+            if cls._instance is not None and (cls._instance.window is not None or cls._instance.root is not None):
+                if on_save_callback is not None:
+                    cls._instance.on_save_callback = on_save_callback
+                if config is not None:
+                    cls._instance.config = config
+                cls._instance._bring_to_front()
+                return cls._instance
+
+            from gtfb.ui.manager import UIManager
+
+            if UIManager._instance is not None and UIManager._instance.is_running:
+                UIManager.get_instance().open_settings(config=config, on_save_callback=on_save_callback)
+                return cls._instance or cls(config=config, on_save_callback=on_save_callback)
 
             instance = cls(config=config, on_save_callback=on_save_callback)
             cls._instance = instance
@@ -254,44 +263,56 @@ class SettingsWindow:
         instance._create_window()
         return instance
 
-    def _bring_to_front(self) -> None:
+    def show(self) -> None:
+        """Create and display the settings window."""
+        self._create_window()
+        SettingsWindow._instance = self
+
+    def bring_to_front(self) -> None:
         """Deiconify and focus the existing window."""
-        if not self.root:
+        win = self.window or self.root
+        if not win:
             return
         try:
-            self.root.deiconify()
-            self.root.lift()
-            self.root.focus_force()
+            win.deiconify()
+            win.lift()
+            win.focus_force()
         except Exception as err:
             logger.debug("Error bringing settings window to front: %s", err)
 
+    def _bring_to_front(self) -> None:
+        """Alias for bring_to_front."""
+        self.bring_to_front()
+
     def _set_window_icon(self) -> None:
         """Attempt to set the window icon from packaged assets."""
-        if not self.root:
+        win = self.window or self.root
+        if not win:
             return
         try:
             asset_dir = Path(__file__).resolve().parent.parent / "assets"
             icon_file = asset_dir / "icon.png"
             if icon_file.exists():
-                self._icon_img = tk.PhotoImage(file=str(icon_file))
-                self.root.iconphoto(False, self._icon_img)
+                self._icon_img = tk.PhotoImage(file=str(icon_file), master=win)
+                win.iconphoto(False, self._icon_img)
         except Exception as err:
             logger.debug("Could not set window icon: %s", err)
 
     def _center_window(self, width: int = 480, height: int = 580) -> None:
         """Center the window on screen."""
-        if not self.root:
+        win = self.window or self.root
+        if not win:
             return
         try:
-            self.root.eval("tk::PlaceWindow . center")
+            win.eval("tk::PlaceWindow . center")
         except Exception:
             try:
-                self.root.update_idletasks()
-                screen_w = self.root.winfo_screenwidth()
-                screen_h = self.root.winfo_screenheight()
+                win.update_idletasks()
+                screen_w = win.winfo_screenwidth()
+                screen_h = win.winfo_screenheight()
                 x = max(0, (screen_w - width) // 2)
                 y = max(0, (screen_h - height) // 2)
-                self.root.geometry(f"{width}x{height}+{x}+{y}")
+                win.geometry(f"{width}x{height}+{x}+{y}")
             except Exception as err:
                 logger.debug("Failed centering window geometry: %s", err)
 
@@ -325,6 +346,9 @@ class SettingsWindow:
             if not self.config.block_rules:
                 self.config.block_rules.append(BlockRule())
             self.config.block_rules[0].domains = domains
+            self.config.block_rules[0].start_hour = bedtime_data["target_hour"]
+            self.config.block_rules[0].start_minute = bedtime_data["target_minute"]
+            self.config.block_rules[0].active = bedtime_data["enabled"]
 
             # Save atomically to disk
             save_config_atomic(self.config, get_config_path())
@@ -339,21 +363,26 @@ class SettingsWindow:
             messagebox.showerror("Error Saving Settings", str(e))
 
     def _create_window(self) -> None:
-        """Instantiate and run the Tkinter window mainloop."""
+        """Instantiate UI widgets."""
         try:
-            self.root = tk.Tk()
-            self.root.title("GTFB — Settings")
-            self.root.geometry("480x580")
-            self.root.resizable(False, False)
+            if self.master is not None:
+                self.window = tk.Toplevel(self.master)
+            else:
+                self.window = tk.Tk()
+
+            self.root = self.window
+            self.window.title("GTFB — Settings")
+            self.window.geometry("480x580")
+            self.window.resizable(False, False)
 
             self._set_window_icon()
             self._center_window(480, 580)
 
             # Bind close window protocol
-            self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+            self.window.protocol("WM_DELETE_WINDOW", self._on_close)
 
             # Main layout frame
-            main_frame = ttk.Frame(self.root, padding="16")
+            main_frame = ttk.Frame(self.window, padding="16")
             main_frame.pack(fill=tk.BOTH, expand=True)
 
             # Title label
@@ -380,35 +409,39 @@ class SettingsWindow:
             # Action buttons
             self._add_action_buttons(main_frame)
 
-            self.root.mainloop()
+            self.bring_to_front()
+
+            # If running as standalone Tk root, run mainloop
+            if isinstance(self.window, tk.Tk):
+                self.window.mainloop()
         except Exception as err:
-            logger.exception("Error in SettingsWindow mainloop: %s", err)
-        finally:
+            logger.exception("Error creating SettingsWindow: %s", err)
             self._on_close()
 
     def _on_close(self) -> None:
-        """Cleanly destroy window, exit mainloop, and reset singleton reference."""
+        """Cleanly destroy window and reset references."""
         with SettingsWindow._lock:
-            if self.root:
+            target = self.window or self.root
+            if target:
                 try:
-                    if self.root.winfo_exists():
-                        self.root.quit()
-                        self.root.destroy()
+                    if hasattr(target, "winfo_exists") and target.winfo_exists():
+                        target.destroy()
                 except Exception as err:
-                    logger.debug("Error destroying settings root: %s", err)
+                    logger.debug("Error destroying settings window: %s", err)
+                self.window = None
                 self.root = None
 
-            if SettingsWindow._instance is self:
+            if SettingsWindow._instance is self or SettingsWindow._instance is not None:
                 SettingsWindow._instance = None
 
+        if self.on_close_callback:
+            try:
+                self.on_close_callback()
+            except Exception as err:
+                logger.debug("Error in settings on_close_callback: %s", err)
+
     def close(self) -> None:
-        """Public method to close the settings window cleanly across threads."""
-        with SettingsWindow._lock:
-            if self.root:
-                try:
-                    if self.root.winfo_exists():
-                        self.root.after(0, self._on_close)
-                        return
-                except Exception as err:
-                    logger.debug("Error scheduling settings close: %s", err)
+        """Public method to close the settings window cleanly."""
         self._on_close()
+
+
