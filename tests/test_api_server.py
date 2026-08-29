@@ -121,7 +121,7 @@ class TestTrayAppAPIServerIntegration(unittest.TestCase):
         mock_scheduler = MagicMock()
         app = TrayApp(scheduler=mock_scheduler, api_server=mock_api)
 
-        with patch.object(app, "_start_status_updater"):
+        with patch.object(app, "_start_status_updater"), patch("gtfb.ui.extension_dialog.check_and_run_first_time_setup"):
             app.run()
             mock_api.start.assert_called_once()
 

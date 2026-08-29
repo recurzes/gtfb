@@ -39,17 +39,26 @@ class TestTrayIconGeneration(unittest.TestCase):
 class TestTrayMenuAndApp(unittest.TestCase):
     """Test TrayApp lifecycle and menu structure."""
 
+    def setUp(self):
+        self.icon_patcher = patch("pystray.Icon")
+        self.mock_icon = self.icon_patcher.start()
+
+    def tearDown(self):
+        self.icon_patcher.stop()
+
     def test_menu_structure(self):
         mock_scheduler = MagicMock()
         mock_scheduler.is_running.return_value = False
         app = TrayApp(scheduler=mock_scheduler)
 
+
+
         menu = create_menu(app)
         self.assertIsInstance(menu, pystray.Menu)
 
         items = list(menu.items)
-        # Expected: Status, Extension Status, Separator, Settings..., Start Scheduler, Stop Scheduler, Separator, Quit
-        self.assertEqual(len(items), 8)
+        # Expected: Status, Extension Status, Separator, Settings..., Extension Setup..., Start Scheduler, Stop Scheduler, Separator, Quit
+        self.assertEqual(len(items), 9)
 
         # Item 0: Status label (disabled)
         status_item = items[0]
@@ -70,23 +79,29 @@ class TestTrayMenuAndApp(unittest.TestCase):
         self.assertTrue(settings_item.enabled)
         self.assertEqual(settings_item._action, app.on_open_settings)
 
-        # Item 4: Start Scheduler
-        start_item = items[4]
+        # Item 4: Extension Setup...
+        ext_setup_item = items[4]
+        self.assertEqual(ext_setup_item.text, "Extension Setup...")
+        self.assertTrue(ext_setup_item.enabled)
+        self.assertEqual(ext_setup_item._action, app.on_open_extension_setup)
+
+        # Item 5: Start Scheduler
+        start_item = items[5]
         self.assertEqual(start_item.text, "Start Scheduler")
         self.assertTrue(start_item.visible)
         self.assertEqual(start_item._action, app.on_start)
 
-        # Item 5: Stop Scheduler
-        stop_item = items[5]
+        # Item 6: Stop Scheduler
+        stop_item = items[6]
         self.assertEqual(stop_item.text, "Stop Scheduler")
         self.assertFalse(stop_item.visible)
         self.assertEqual(stop_item._action, app.on_stop)
 
-        # Item 6: Separator
-        self.assertEqual(str(items[6]), "- - - -")
+        # Item 7: Separator
+        self.assertEqual(str(items[7]), "- - - -")
 
-        # Item 7: Quit
-        quit_item = items[7]
+        # Item 8: Quit
+        quit_item = items[8]
         self.assertEqual(quit_item.text, "Quit")
         self.assertTrue(quit_item.enabled)
         self.assertEqual(quit_item._action, app.on_quit)
@@ -107,10 +122,14 @@ class TestTrayMenuAndApp(unittest.TestCase):
         self.assertEqual(settings_item.text, "Settings...")
         self.assertTrue(settings_item.enabled)
 
-        start_item = items[4]
+        ext_setup_item = items[4]
+        self.assertEqual(ext_setup_item.text, "Extension Setup...")
+        self.assertTrue(ext_setup_item.enabled)
+
+        start_item = items[5]
         self.assertFalse(start_item.visible)
 
-        stop_item = items[5]
+        stop_item = items[6]
         self.assertTrue(stop_item.visible)
 
     def test_extension_status_text_disconnected_by_default(self):
@@ -150,16 +169,10 @@ class TestTrayMenuAndApp(unittest.TestCase):
 
     def test_on_open_settings_starts_thread(self):
         app = TrayApp()
-        with patch("threading.Thread") as mock_thread_cls:
-            mock_thread = MagicMock()
-            mock_thread_cls.return_value = mock_thread
-
+        with patch("gtfb.ui.manager.UIManager.open_settings") as mock_open:
             app.on_open_settings()
+            mock_open.assert_called_once()
 
-            mock_thread_cls.assert_called_once()
-            _, kwargs = mock_thread_cls.call_args
-            self.assertTrue(kwargs.get("daemon"))
-            mock_thread.start.assert_called_once()
 
     def test_is_scheduler_running_and_stopped(self):
         mock_scheduler = MagicMock()
@@ -208,8 +221,11 @@ class TestTrayMenuAndApp(unittest.TestCase):
         app = TrayApp()
         self.assertIsNotNone(app.icon)
         self.assertIsNotNone(app.scheduler)
-        self.assertEqual(app.icon.title, "GTFB: Stopped")
-        self.assertEqual(app.icon.name, "gtfb")
+        self.mock_icon.assert_called_once()
+        _, kwargs = self.mock_icon.call_args
+        self.assertEqual(kwargs.get("name"), "gtfb")
+        self.assertEqual(kwargs.get("title"), "GTFB: Stopped")
+
 
     def test_tray_app_initialization_with_custom_scheduler(self):
         mock_scheduler = MagicMock()
@@ -281,29 +297,21 @@ class TestTrayMenuAndApp(unittest.TestCase):
             mock_stop.assert_called_once()
 
     def test_tray_app_on_quit_closes_active_settings_window(self):
-        mock_settings = MagicMock()
-        with patch("gtfb.ui.settings_window.SettingsWindow.get_instance", return_value=mock_settings), \
+        mock_ui_mgr = MagicMock()
+        with patch("gtfb.ui.manager.UIManager._instance", mock_ui_mgr), \
              patch.object(TrayApp, "_stop_status_updater"):
             app = TrayApp()
             with patch.object(app.icon, "stop"):
                 app.on_quit()
-                mock_settings.close.assert_called_once()
+                mock_ui_mgr.shutdown.assert_called_once()
+
 
     def test_tray_app_on_open_settings_spawns_thread_with_save_callback(self):
         app = TrayApp()
-        with patch("threading.Thread") as mock_thread_cls:
-            mock_thread = MagicMock()
-            mock_thread_cls.return_value = mock_thread
-
+        with patch("gtfb.ui.manager.UIManager.open_settings") as mock_open:
             app.on_open_settings()
+            mock_open.assert_called_once()
 
-            mock_thread_cls.assert_called_once_with(
-                target=SettingsWindow.open_or_focus,
-                kwargs={"on_save_callback": app.on_settings_saved},
-                name="GTFBSettingsWindowThread",
-                daemon=True,
-            )
-            mock_thread.start.assert_called_once()
 
     def test_tray_app_on_settings_saved_updates_scheduler_and_tray(self):
         mock_scheduler = MagicMock()

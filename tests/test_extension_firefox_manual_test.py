@@ -71,11 +71,13 @@ def test_manifest_firefox_compatibility_spec():
     assert "alarms" in permissions
     assert "*://*/*" in manifest.get("host_permissions", [])
 
-    # Background scripts
+    # Background service worker
     background = manifest.get("background", {})
     assert background.get("service_worker") == "src/background.js"
-    assert "lib/browser-polyfill.min.js" in background.get("scripts", [])
-    assert "src/background.js" in background.get("scripts", [])
+    assert background.get("type") == "module"
+    worker_file = EXTENSION_DIR / "src" / "background.js"
+    assert worker_file.is_file(), f"Background worker script not found: {worker_file}"
+
 
 
 def test_firefox_node_runtime_simulation():
