@@ -4,6 +4,103 @@
  */
 
 import { applyBlockRules, clearBlockRules } from "./rules.js";
+import { isTimeInWindow } from "./scheduler_utils.js";
+
+export const DEFAULT_SCHEDULE = {
+  enabled: true,
+  startHour: 22,
+  startMinute: 0,
+  endHour: 6,
+  endMinute: 0
+};
+
+/**
+ * Creates or updates the recurring schedule check alarm.
+ */
+export function setupScheduleAlarm() {
+  if (typeof chrome !== "undefined" && chrome.alarms && chrome.alarms.create) {
+    chrome.alarms.create("gtfb-schedule-check", {
+      periodInMinutes: 1
+    });
+  }
+}
+
+/**
+ * Evaluates current time against the scheduled window and applies or clears block rules accordingly.
+ * @param {Date|null} [nowOverride] - Optional override for current time (testing)
+ * @param {object|null} [scheduleOverride] - Optional override for schedule config (testing)
+ * @returns {Promise<void>}
+ */
+export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverride = null) {
+  const now = nowOverride || new Date();
+  let schedule = scheduleOverride || DEFAULT_SCHEDULE;
+
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local && !scheduleOverride) {
+    const data = await chrome.storage.local.get("schedule");
+    if (data && data.schedule) {
+      schedule = data.schedule;
+    }
+  }
+
+  if (!schedule || !schedule.enabled) {
+    return;
+  }
+
+  const shouldBlock = isTimeInWindow(
+    now,
+    schedule.startHour,
+    schedule.startMinute,
+    schedule.endHour,
+    schedule.endMinute
+  );
+
+  let isBlockingActive = false;
+  let isLocked = false;
+
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    const status = await getBlockingStatus();
+    isBlockingActive = status.isBlockingActive;
+    isLocked = status.isLocked;
+  }
+
+  // If focus lock is currently active, do not disengage blocking
+  if (isLocked) {
+    return;
+  }
+
+  if (shouldBlock && !isBlockingActive) {
+    console.log("[GTFB Background] Scheduled bedtime window active. Enabling blocking.");
+    await applyBlockRules();
+    if (typeof chrome !== "undefined" && chrome.action) {
+      await chrome.action.setBadgeText({ text: "ON" });
+      await chrome.action.setBadgeBackgroundColor({ color: "#22C55E" });
+    }
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      await chrome.storage.local.set({ isBlockingActive: true });
+    }
+  } else if (!shouldBlock && isBlockingActive) {
+    console.log("[GTFB Background] Scheduled bedtime window passed. Disabling blocking.");
+    await clearBlockRules();
+    if (typeof chrome !== "undefined" && chrome.action) {
+      await chrome.action.setBadgeText({ text: "" });
+    }
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      await chrome.storage.local.set({ isBlockingActive: false });
+    }
+  }
+}
+
+// Alarm listener
+if (typeof chrome !== "undefined" && chrome.alarms && chrome.alarms.onAlarm) {
+  chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm && alarm.name === "gtfb-schedule-check") {
+      await evaluateCurrentSchedule();
+    }
+  });
+}
+
+// Top-level alarm setup
+setupScheduleAlarm();
 
 /**
  * Retrieves the current blocking status and focus lock timer state.
@@ -164,14 +261,13 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onInstalle
   chrome.runtime.onInstalled.addListener(async (details) => {
     console.log("[GTFB Background] Extension installed/updated:", details.reason);
     try {
+      setupScheduleAlarm();
       const status = await getBlockingStatus();
       if (status.isLocked) {
         const remainingMinutes = Math.max(1, Math.round(status.remainingSeconds / 60));
         await handleToggle(true, { durationMinutes: remainingMinutes });
-      } else if (status.isBlockingActive) {
-        await handleToggle(true);
       } else {
-        await handleToggle(false);
+        await evaluateCurrentSchedule();
       }
     } catch (err) {
       console.error("[GTFB Background] Failed to apply block rules on install:", err);
@@ -184,14 +280,13 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onStartup)
   chrome.runtime.onStartup.addListener(async () => {
     console.log("[GTFB Background] Browser startup detected.");
     try {
+      setupScheduleAlarm();
       const status = await getBlockingStatus();
       if (status.isLocked) {
         const remainingMinutes = Math.max(1, Math.round(status.remainingSeconds / 60));
         await handleToggle(true, { durationMinutes: remainingMinutes });
-      } else if (status.isBlockingActive) {
-        await handleToggle(true);
       } else {
-        await handleToggle(false);
+        await evaluateCurrentSchedule();
       }
     } catch (err) {
       console.error("[GTFB Background] Failed to apply block rules on startup:", err);
