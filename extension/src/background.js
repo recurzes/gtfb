@@ -13,6 +13,7 @@ import {
   getSyncStatus,
   reportStatusToApp
 } from "./sync.js";
+import { extApi } from "./compat.js";
 
 export const DEFAULT_SCHEDULE = {
   enabled: true,
@@ -26,8 +27,8 @@ export const DEFAULT_SCHEDULE = {
  * Creates or updates the recurring schedule check alarm.
  */
 export function setupScheduleAlarm() {
-  if (typeof chrome !== "undefined" && chrome.alarms && chrome.alarms.create) {
-    chrome.alarms.create("gtfb-schedule-check", {
+  if (extApi.alarms && typeof extApi.alarms.create === "function") {
+    extApi.alarms.create("gtfb-schedule-check", {
       periodInMinutes: 1
     });
   }
@@ -35,7 +36,7 @@ export function setupScheduleAlarm() {
 
 /**
  * Evaluates current time against the scheduled window and applies or clears block rules accordingly.
- * Reads schedule configurations from cachedConfig in chrome.storage.local.
+ * Reads schedule configurations from cachedConfig in storage.
  * @param {Date|null} [nowOverride] - Optional override for current time (testing)
  * @param {object|null} [scheduleOverride] - Optional override for schedule config (testing)
  * @returns {Promise<void>}
@@ -56,7 +57,7 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
       shouldBlock = isTimeInWindow(now, startH, startM, endH, endM);
     }
   } else {
-    // Read from cachedConfig in chrome.storage.local
+    // Read from cachedConfig in storage
     const config = await getCachedConfig();
     if (config && Array.isArray(config.block_rules)) {
       for (const rule of config.block_rules) {
@@ -77,7 +78,7 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
   let isBlockingActive = false;
   let isLocked = false;
 
-  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+  if (extApi.storage && extApi.storage.local) {
     const status = await getBlockingStatus();
     isBlockingActive = status.isBlockingActive;
     isLocked = status.isLocked;
@@ -97,14 +98,14 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
   if (shouldBlock) {
     console.log("[GTFB Background] Scheduled bedtime window active. Enabling blocking.");
     await applyBlockRules();
-    if (typeof chrome !== "undefined" && chrome.action && chrome.action.setBadgeText) {
-      await chrome.action.setBadgeText({ text: "ON" });
-      if (chrome.action.setBadgeBackgroundColor) {
-        await chrome.action.setBadgeBackgroundColor({ color: "#22C55E" });
+    if (extApi.action && typeof extApi.action.setBadgeText === "function") {
+      await extApi.action.setBadgeText({ text: "ON" });
+      if (typeof extApi.action.setBadgeBackgroundColor === "function") {
+        await extApi.action.setBadgeBackgroundColor({ color: "#22C55E" });
       }
     }
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      await chrome.storage.local.set({ isBlockingActive: true });
+    if (extApi.storage && extApi.storage.local) {
+      await extApi.storage.local.set({ isBlockingActive: true });
     }
     if (!isBlockingActive) {
       try {
@@ -118,11 +119,11 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
       console.log("[GTFB Background] Scheduled bedtime window passed. Disabling blocking.");
     }
     await clearBlockRules();
-    if (typeof chrome !== "undefined" && chrome.action && chrome.action.setBadgeText) {
-      await chrome.action.setBadgeText({ text: "" });
+    if (extApi.action && typeof extApi.action.setBadgeText === "function") {
+      await extApi.action.setBadgeText({ text: "" });
     }
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      await chrome.storage.local.set({ isBlockingActive: false });
+    if (extApi.storage && extApi.storage.local) {
+      await extApi.storage.local.set({ isBlockingActive: false });
     }
     if (isBlockingActive) {
       try {
@@ -135,8 +136,8 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
 }
 
 // Alarm listener
-if (typeof chrome !== "undefined" && chrome.alarms && chrome.alarms.onAlarm) {
-  chrome.alarms.onAlarm.addListener(async (alarm) => {
+if (extApi.alarms && extApi.alarms.onAlarm && typeof extApi.alarms.onAlarm.addListener === "function") {
+  extApi.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm && alarm.name === "gtfb-schedule-check") {
       await evaluateCurrentSchedule();
     } else if (alarm && alarm.name === SYNC_ALARM_NAME) {
@@ -154,11 +155,11 @@ setupSyncAlarm();
  * @returns {Promise<{ isBlockingActive: boolean, isLocked: boolean, lockedUntil: number | null, remainingSeconds: number }>}
  */
 export async function getBlockingStatus() {
-  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+  if (!extApi.storage || !extApi.storage.local) {
     return { isBlockingActive: true, isLocked: false, lockedUntil: null, remainingSeconds: 0 };
   }
 
-  const data = await chrome.storage.local.get(["isBlockingActive", "lockedUntil"]);
+  const data = await extApi.storage.local.get(["isBlockingActive", "lockedUntil"]);
   const now = Date.now();
   let lockedUntil = data.lockedUntil || null;
   let isLocked = false;
@@ -170,7 +171,7 @@ export async function getBlockingStatus() {
   } else if (lockedUntil && lockedUntil <= now) {
     // Expired lock: clear lockedUntil
     lockedUntil = null;
-    await chrome.storage.local.set({ lockedUntil: null });
+    await extApi.storage.local.set({ lockedUntil: null });
   }
 
   // Default isBlockingActive is true if undefined
@@ -215,21 +216,25 @@ export async function handleToggle(enable, options = {}) {
 
     if (durationMinutes > 0) {
       lockedUntil = now + Math.round(durationMinutes * 60 * 1000);
-      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-        await chrome.storage.local.set({ isBlockingActive: true, lockedUntil });
+      if (extApi.storage && extApi.storage.local) {
+        await extApi.storage.local.set({ isBlockingActive: true, lockedUntil });
       }
-      if (typeof chrome !== "undefined" && chrome.action) {
-        await chrome.action.setBadgeText({ text: "LOCK" });
-        await chrome.action.setBadgeBackgroundColor({ color: "#8B5CF6" }); // Violet badge for Focus Lock
+      if (extApi.action && typeof extApi.action.setBadgeText === "function") {
+        await extApi.action.setBadgeText({ text: "LOCK" });
+        if (typeof extApi.action.setBadgeBackgroundColor === "function") {
+          await extApi.action.setBadgeBackgroundColor({ color: "#8B5CF6" }); // Violet badge for Focus Lock
+        }
       }
       console.log(`[GTFB Background] Focus Lock activated for ${durationMinutes} minutes.`);
     } else {
-      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-        await chrome.storage.local.set({ isBlockingActive: true, lockedUntil: null });
+      if (extApi.storage && extApi.storage.local) {
+        await extApi.storage.local.set({ isBlockingActive: true, lockedUntil: null });
       }
-      if (typeof chrome !== "undefined" && chrome.action) {
-        await chrome.action.setBadgeText({ text: "ON" });
-        await chrome.action.setBadgeBackgroundColor({ color: "#22C55E" }); // Green badge for standard ON
+      if (extApi.action && typeof extApi.action.setBadgeText === "function") {
+        await extApi.action.setBadgeText({ text: "ON" });
+        if (typeof extApi.action.setBadgeBackgroundColor === "function") {
+          await extApi.action.setBadgeBackgroundColor({ color: "#22C55E" }); // Green badge for standard ON
+        }
       }
       console.log("[GTFB Background] Blocking manually enabled.");
     }
@@ -248,11 +253,11 @@ export async function handleToggle(enable, options = {}) {
     };
   } else {
     await clearBlockRules();
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      await chrome.storage.local.set({ isBlockingActive: false, lockedUntil: null });
+    if (extApi.storage && extApi.storage.local) {
+      await extApi.storage.local.set({ isBlockingActive: false, lockedUntil: null });
     }
-    if (typeof chrome !== "undefined" && chrome.action) {
-      await chrome.action.setBadgeText({ text: "" });
+    if (extApi.action && typeof extApi.action.setBadgeText === "function") {
+      await extApi.action.setBadgeText({ text: "" });
     }
     console.log("[GTFB Background] Blocking manually disabled.");
 
@@ -283,9 +288,9 @@ export async function startLockTimer(durationMinutes) {
   return handleToggle(true, { durationMinutes });
 }
 
-// Runtime message listener
-if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Runtime message listener (extApi.runtime / chrome.runtime.onMessage)
+if (extApi.runtime && extApi.runtime.onMessage && typeof extApi.runtime.onMessage.addListener === "function") {
+  extApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || !message.action) {
       return false;
     }
@@ -336,10 +341,10 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
   });
 }
 
-// Initialize sync, block rules, and badge on extension install or update
-if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onInstalled) {
-  chrome.runtime.onInstalled.addListener(async (details) => {
-    console.log("[GTFB Background] Extension installed/updated:", details.reason);
+// Initialize sync, block rules, and badge on extension install or update (chrome.runtime.onInstalled.addListener)
+if (extApi.runtime && extApi.runtime.onInstalled && typeof extApi.runtime.onInstalled.addListener === "function") {
+  extApi.runtime.onInstalled.addListener(async (details) => {
+    console.log("[GTFB Background] Extension installed/updated:", details?.reason);
     try {
       setupScheduleAlarm();
       setupSyncAlarm();
@@ -357,9 +362,9 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onInstalle
   });
 }
 
-// Re-apply block rules and trigger sync on browser startup
-if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onStartup) {
-  chrome.runtime.onStartup.addListener(async () => {
+// Re-apply block rules and trigger sync on browser startup (chrome.runtime.onStartup.addListener)
+if (extApi.runtime && extApi.runtime.onStartup && typeof extApi.runtime.onStartup.addListener === "function") {
+  extApi.runtime.onStartup.addListener(async () => {
     console.log("[GTFB Background] Browser startup detected.");
     try {
       setupScheduleAlarm();
@@ -388,3 +393,4 @@ export {
   getSyncStatus,
   reportStatusToApp
 };
+

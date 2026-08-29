@@ -5,6 +5,7 @@
 
 import { getActiveDomains } from "./storage.js";
 import { getSyncStatus, fetchConfigFromApp } from "./sync.js";
+import { extApi } from "./compat.js";
 
 let countdownInterval = null;
 let selectedDurationMinutes = 25;
@@ -147,12 +148,12 @@ export async function fetchAndRefreshStatus() {
   try {
     refreshDomainCount();
     refreshSyncStatus();
-    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ action: "GET_BLOCKING_STATUS" }, (response) => {
-        if (chrome.runtime.lastError || !response) {
-          // Fallback to chrome.storage
-          if (chrome.storage && chrome.storage.local) {
-            chrome.storage.local.get(["isBlockingActive", "lockedUntil"]).then((data) => {
+    if (extApi.runtime && typeof extApi.runtime.sendMessage === "function") {
+      extApi.runtime.sendMessage({ action: "GET_BLOCKING_STATUS" }, (response) => {
+        if (extApi.runtime?.lastError || !response) {
+          // Fallback to storage
+          if (extApi.storage && extApi.storage.local) {
+            extApi.storage.local.get(["isBlockingActive", "lockedUntil"]).then((data) => {
               const now = Date.now();
               const isLocked = Boolean(data.lockedUntil && data.lockedUntil > now);
               updateUI({
@@ -183,8 +184,8 @@ export function setupPopupListeners() {
   if (blockingToggle) {
     blockingToggle.addEventListener("change", (e) => {
       const isChecked = e.target.checked;
-      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage(
+      if (extApi.runtime && typeof extApi.runtime.sendMessage === "function") {
+        extApi.runtime.sendMessage(
           { action: "TOGGLE_BLOCKING", enabled: isChecked },
           (response) => {
             if (response && response.success !== false) {
@@ -228,8 +229,8 @@ export function setupPopupListeners() {
   // Start Focus Lock button handling
   if (startLockBtn) {
     startLockBtn.addEventListener("click", () => {
-      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
-        chrome.runtime.sendMessage(
+      if (extApi.runtime && typeof extApi.runtime.sendMessage === "function") {
+        extApi.runtime.sendMessage(
           { action: "START_LOCK_TIMER", durationMinutes: selectedDurationMinutes },
           (response) => {
             if (response && response.success) {
@@ -244,8 +245,8 @@ export function setupPopupListeners() {
   }
 
   // Listen for storage changes from background or other tabs
-  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
-    chrome.storage.onChanged.addListener((changes, area) => {
+  if (extApi.storage && extApi.storage.onChanged && typeof extApi.storage.onChanged.addListener === "function") {
+    extApi.storage.onChanged.addListener((changes, area) => {
       if (area === "local") {
         if (changes.isBlockingActive || changes.lockedUntil) {
           fetchAndRefreshStatus();
@@ -270,8 +271,8 @@ if (typeof document !== "undefined" && typeof document.addEventListener === "fun
     refreshSyncStatus();
 
     // Trigger immediate background sync on popup open
-    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ action: "SYNC_CONFIG" }, () => {
+    if (extApi.runtime && typeof extApi.runtime.sendMessage === "function") {
+      extApi.runtime.sendMessage({ action: "SYNC_CONFIG" }, () => {
         refreshSyncStatus();
         refreshDomainCount();
       });
@@ -283,3 +284,4 @@ if (typeof document !== "undefined" && typeof document.addEventListener === "fun
     }
   });
 }
+
