@@ -4,6 +4,7 @@
  */
 
 import { getActiveDomains } from "./storage.js";
+import { getSyncStatus, fetchConfigFromApp } from "./sync.js";
 
 let countdownInterval = null;
 let selectedDurationMinutes = 25;
@@ -17,6 +18,29 @@ export function formatTime(totalSeconds) {
   const mins = Math.floor(Math.max(0, totalSeconds) / 60);
   const secs = Math.floor(Math.max(0, totalSeconds) % 60);
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Refreshes the connection / synchronization badge in the popup header.
+ */
+export async function refreshSyncStatus() {
+  try {
+    const syncStatusElem = document.getElementById("syncStatus");
+    if (!syncStatusElem) return;
+
+    const sync = await getSyncStatus();
+    if (sync.isConnected) {
+      syncStatusElem.className = "status-indicator connected";
+      syncStatusElem.textContent = "Synced";
+      syncStatusElem.title = `Connected to GTFB app on port ${sync.apiPort}`;
+    } else {
+      syncStatusElem.className = "status-indicator standalone";
+      syncStatusElem.textContent = "Standalone";
+      syncStatusElem.title = "Operating in standalone mode (desktop app offline)";
+    }
+  } catch (err) {
+    console.error("[GTFB Popup] Failed to refresh sync status:", err);
+  }
 }
 
 /**
@@ -122,6 +146,7 @@ export function updateUI(status = {}) {
 export async function fetchAndRefreshStatus() {
   try {
     refreshDomainCount();
+    refreshSyncStatus();
     if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
       chrome.runtime.sendMessage({ action: "GET_BLOCKING_STATUS" }, (response) => {
         if (chrome.runtime.lastError || !response) {
@@ -228,6 +253,9 @@ export function setupPopupListeners() {
         if (changes.cachedConfig) {
           refreshDomainCount();
         }
+        if (changes.isConnected || changes.apiPort || changes.lastSyncSuccess) {
+          refreshSyncStatus();
+        }
       }
     });
   }
@@ -239,5 +267,19 @@ if (typeof document !== "undefined" && typeof document.addEventListener === "fun
     setupPopupListeners();
     fetchAndRefreshStatus();
     refreshDomainCount();
+    refreshSyncStatus();
+
+    // Trigger immediate background sync on popup open
+    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({ action: "SYNC_CONFIG" }, () => {
+        refreshSyncStatus();
+        refreshDomainCount();
+      });
+    } else {
+      fetchConfigFromApp().then(() => {
+        refreshSyncStatus();
+        refreshDomainCount();
+      }).catch(() => {});
+    }
   });
 }

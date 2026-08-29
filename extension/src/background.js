@@ -6,6 +6,12 @@
 import { applyBlockRules, clearBlockRules } from "./rules.js";
 import { isTimeInWindow } from "./scheduler_utils.js";
 import { getCachedConfig, getActiveDomains } from "./storage.js";
+import {
+  fetchConfigFromApp,
+  setupSyncAlarm,
+  SYNC_ALARM_NAME,
+  getSyncStatus
+} from "./sync.js";
 
 export const DEFAULT_SCHEDULE = {
   enabled: true,
@@ -108,12 +114,15 @@ if (typeof chrome !== "undefined" && chrome.alarms && chrome.alarms.onAlarm) {
   chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm && alarm.name === "gtfb-schedule-check") {
       await evaluateCurrentSchedule();
+    } else if (alarm && alarm.name === SYNC_ALARM_NAME) {
+      await fetchConfigFromApp();
     }
   });
 }
 
 // Top-level alarm setup
 setupScheduleAlarm();
+setupSyncAlarm();
 
 /**
  * Retrieves the current blocking status and focus lock timer state.
@@ -265,16 +274,32 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    if (message.action === "SYNC_CONFIG" || message.action === "FETCH_CONFIG") {
+      fetchConfigFromApp(message.startPort, message.maxPort, message.timeoutMs)
+        .then((res) => sendResponse(res))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
+    if (message.action === "GET_SYNC_STATUS") {
+      getSyncStatus()
+        .then((res) => sendResponse(res))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
     return false;
   });
 }
 
-// Initialize block rules and badge on extension install or update
+// Initialize sync, block rules, and badge on extension install or update
 if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onInstalled) {
   chrome.runtime.onInstalled.addListener(async (details) => {
     console.log("[GTFB Background] Extension installed/updated:", details.reason);
     try {
       setupScheduleAlarm();
+      setupSyncAlarm();
+      await fetchConfigFromApp();
       const status = await getBlockingStatus();
       if (status.isLocked) {
         const remainingMinutes = Math.max(1, Math.round(status.remainingSeconds / 60));
@@ -283,17 +308,19 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onInstalle
         await evaluateCurrentSchedule();
       }
     } catch (err) {
-      console.error("[GTFB Background] Failed to apply block rules on install:", err);
+      console.error("[GTFB Background] Failed to initialize on install:", err);
     }
   });
 }
 
-// Re-apply block rules on browser startup
+// Re-apply block rules and trigger sync on browser startup
 if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(async () => {
     console.log("[GTFB Background] Browser startup detected.");
     try {
       setupScheduleAlarm();
+      setupSyncAlarm();
+      await fetchConfigFromApp();
       const status = await getBlockingStatus();
       if (status.isLocked) {
         const remainingMinutes = Math.max(1, Math.round(status.remainingSeconds / 60));
@@ -302,9 +329,16 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onStartup)
         await evaluateCurrentSchedule();
       }
     } catch (err) {
-      console.error("[GTFB Background] Failed to apply block rules on startup:", err);
+      console.error("[GTFB Background] Failed to initialize on startup:", err);
     }
   });
 }
 
-export { applyBlockRules, clearBlockRules };
+export {
+  applyBlockRules,
+  clearBlockRules,
+  fetchConfigFromApp,
+  setupSyncAlarm,
+  SYNC_ALARM_NAME,
+  getSyncStatus
+};
