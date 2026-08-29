@@ -3,7 +3,7 @@
  * Background Service Worker (Manifest V3)
  */
 
-import { applyBlockRules, clearBlockRules } from "./rules.js";
+import { applyBlockRules, clearBlockRules, syncAndApplyRules } from "./rules.js";
 import { isTimeInWindow } from "./scheduler_utils.js";
 import { getCachedConfig, getActiveDomains } from "./storage.js";
 import {
@@ -82,25 +82,30 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
     isLocked = status.isLocked;
   }
 
-  // If focus lock is currently active, do not disengage blocking
+  // If focus lock is currently active, do not disengage blocking but ensure rules are applied
   if (isLocked) {
+    await applyBlockRules();
     return;
   }
 
-  if (shouldBlock && !isBlockingActive) {
+  if (shouldBlock) {
     console.log("[GTFB Background] Scheduled bedtime window active. Enabling blocking.");
     await applyBlockRules();
-    if (typeof chrome !== "undefined" && chrome.action) {
+    if (typeof chrome !== "undefined" && chrome.action && chrome.action.setBadgeText) {
       await chrome.action.setBadgeText({ text: "ON" });
-      await chrome.action.setBadgeBackgroundColor({ color: "#22C55E" });
+      if (chrome.action.setBadgeBackgroundColor) {
+        await chrome.action.setBadgeBackgroundColor({ color: "#22C55E" });
+      }
     }
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       await chrome.storage.local.set({ isBlockingActive: true });
     }
-  } else if (!shouldBlock && isBlockingActive) {
-    console.log("[GTFB Background] Scheduled bedtime window passed. Disabling blocking.");
+  } else {
+    if (isBlockingActive) {
+      console.log("[GTFB Background] Scheduled bedtime window passed. Disabling blocking.");
+    }
     await clearBlockRules();
-    if (typeof chrome !== "undefined" && chrome.action) {
+    if (typeof chrome !== "undefined" && chrome.action && chrome.action.setBadgeText) {
       await chrome.action.setBadgeText({ text: "" });
     }
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
@@ -337,6 +342,7 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onStartup)
 export {
   applyBlockRules,
   clearBlockRules,
+  syncAndApplyRules,
   fetchConfigFromApp,
   setupSyncAlarm,
   SYNC_ALARM_NAME,

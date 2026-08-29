@@ -25,7 +25,7 @@ export function setupSyncAlarm(periodInMinutes = 1) {
 /**
  * Fetches the latest configuration profile from the local GTFB desktop API.
  * Iterates through the supported port range (8765-8775) with timeout aborts.
- * Updates local storage cache and connection state upon success or failure.
+ * Updates local storage cache, re-evaluates schedule/rules, and connection state upon success or failure.
  *
  * @param {number} [startPort=8765] - Starting port to scan
  * @param {number} [maxPort=8775] - Highest fallback port to scan
@@ -70,6 +70,16 @@ export async function fetchConfigFromApp(
       });
     }
     console.log(`[GTFB Sync] Successfully synced config from port ${activePort}`);
+
+    try {
+      const bg = await import("./background.js");
+      if (bg && typeof bg.evaluateCurrentSchedule === "function") {
+        await bg.evaluateCurrentSchedule();
+      }
+    } catch (e) {
+      console.warn("[GTFB Sync] Error evaluating schedule after sync:", e);
+    }
+
     return { success: true, config: configData, port: activePort };
   } else {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {

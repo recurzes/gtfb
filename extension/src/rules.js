@@ -54,13 +54,47 @@ export function compileBlockRules(domains = TEST_DOMAINS) {
     priority: 1,
     action: {
       type: "redirect",
-      redirect: { extensionPath: "/src/blocked.html" }
+      redirect: { extensionPath: `/src/blocked.html?domain=${encodeURIComponent(domain)}` }
     },
     condition: {
       urlFilter: `||${domain}`,
       resourceTypes: ["main_frame"]
     }
   }));
+}
+
+/**
+ * Compiles and applies dynamic blocking rules directly from a configuration object.
+ * @param {object} config - Configuration profile object
+ * @returns {Promise<Array<object>>} The applied rules
+ */
+export async function syncAndApplyRules(config) {
+  if (!config || !config.block_rules || !Array.isArray(config.block_rules)) {
+    return [];
+  }
+
+  const domains = [];
+  for (const rule of config.block_rules) {
+    if (rule && (rule.active !== false) && Array.isArray(rule.domains)) {
+      domains.push(...rule.domains);
+    }
+  }
+
+  const existingRules = (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.getDynamicRules)
+    ? await chrome.declarativeNetRequest.getDynamicRules()
+    : [];
+  const removeRuleIds = existingRules.map((r) => r.id);
+  const addRules = compileBlockRules(domains);
+
+  if (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.updateDynamicRules) {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: removeRuleIds,
+      addRules: addRules
+    });
+  }
+
+  console.log(`[GTFB Rules] Synced and applied ${addRules.length} dynamic rules.`);
+  return addRules;
 }
 
 /**
@@ -78,14 +112,18 @@ export async function applyBlockRules(domains = null) {
     }
   }
 
-  const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+  const existingRules = (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.getDynamicRules)
+    ? await chrome.declarativeNetRequest.getDynamicRules()
+    : [];
   const removeRuleIds = existingRules.map((r) => r.id);
   const addRules = compileBlockRules(targetDomains);
 
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: removeRuleIds,
-    addRules: addRules
-  });
+  if (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.updateDynamicRules) {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: removeRuleIds,
+      addRules: addRules
+    });
+  }
 
   console.log(`[GTFB] Applied ${addRules.length} dynamic blocking rules.`);
   return addRules;
@@ -96,13 +134,17 @@ export async function applyBlockRules(domains = null) {
  * @returns {Promise<void>}
  */
 export async function clearBlockRules() {
-  const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+  const existingRules = (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.getDynamicRules)
+    ? await chrome.declarativeNetRequest.getDynamicRules()
+    : [];
   const removeRuleIds = existingRules.map((r) => r.id);
 
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: removeRuleIds,
-    addRules: []
-  });
+  if (typeof chrome !== "undefined" && chrome.declarativeNetRequest && chrome.declarativeNetRequest.updateDynamicRules) {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: removeRuleIds,
+      addRules: []
+    });
+  }
 
   console.log("[GTFB] Cleared all blocking rules.");
 }
