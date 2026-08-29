@@ -78,7 +78,7 @@ GTFB isolates user-facing GUI applications from background system services befor
 
 ## 4. Packaging & Dependency Strategy
 
-To ensure seamless installation on all platforms:
+To ensure seamless installation and execution on all platforms:
 - In `pyproject.toml`, platform-specific packages are conditional:
   ```toml
   dependencies = [
@@ -89,6 +89,10 @@ To ensure seamless installation on all platforms:
   ]
   ```
 - All modules import OS-specific libraries (`win32gui`, `win32con`, `win32process`) inside conditional checks and `try...except` blocks with fallback mechanisms.
+- **Standalone OS Packaging with PyInstaller:**
+  - **Windows:** Spec at `packaging/windows/gtfb.spec`, automated build script `scripts/build_windows.py` / `build_windows.bat` creating a windowless `gtfb.exe` binary.
+  - **macOS:** Spec at `packaging/macos/gtfb.spec`, automated build script `scripts/build_macos.py` / `build_macos.sh` creating native `GTFB.app` bundle with `LSUIElement=true` (runs as a top menu bar agent app without a Dock icon). See [BUILD_MACOS.md](BUILD_MACOS.md) for full build instructions and Gatekeeper bypass guide.
+
 
 ---
 
