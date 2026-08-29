@@ -183,6 +183,11 @@ class TrayApp:
         self.config = new_config
         if self.scheduler:
             self.scheduler.update_config(new_config)
+        if self.api_server:
+            try:
+                self.api_server.notify_config_changed(new_config)
+            except Exception as err:
+                logger.debug("Error broadcasting config update to API server: %s", err)
         self.update_tray_state()
         if self.icon:
             self.icon.update_menu()
@@ -194,27 +199,43 @@ class TrayApp:
     ) -> None:
         """Handle Open Settings menu action."""
         logger.info("Opening GTFB settings window from tray menu...")
-        threading.Thread(
-            target=SettingsWindow.open_or_focus,
-            kwargs={"on_save_callback": self.on_settings_saved},
-            name="GTFBSettingsWindowThread",
-            daemon=True,
-        ).start()
+        from gtfb.ui.manager import UIManager
+
+        UIManager.get_instance().open_settings(
+            config=self.get_active_config(),
+            on_save_callback=self.on_settings_saved,
+        )
+
+    def on_open_extension_setup(
+        self,
+        icon: Optional[pystray.Icon] = None,
+        item: Optional[pystray.MenuItem] = None,
+    ) -> None:
+        """Handle Extension Setup menu action."""
+        logger.info("Opening GTFB browser extension setup from tray menu...")
+        from gtfb.ui.manager import UIManager
+
+        UIManager.get_instance().open_extension_setup()
 
     def get_extension_status_text(self, item: Optional[pystray.MenuItem] = None) -> str:
         """Return dynamic menu label reflecting browser extension connection and enforcement state."""
         if not self.status_store:
             return "○ Extension: Not Connected"
-        latest = self.status_store.get_status()
-        is_connected = self.status_store.is_connected(timeout_seconds=90.0)
 
-        if not is_connected or not latest:
+        active_browsers = self.status_store.get_connected_browsers(timeout_seconds=90.0)
+        if not active_browsers:
             return "○ Extension: Not Connected"
 
-        browser_raw = latest.get("browser") or "Browser"
-        browser = str(browser_raw).capitalize()
-        blocking = "Active" if latest.get("blocking_active") else "Inactive"
-        return f"● Extension: Connected ({browser} — {blocking})"
+        browser_names = [
+            str(b.get("browser", "Browser")).capitalize()
+            for b in active_browsers
+        ]
+        unique_browsers = list(dict.fromkeys(browser_names))
+        browsers_label = ", ".join(unique_browsers)
+
+        any_blocking = any(b.get("blocking_active") for b in active_browsers)
+        blocking_label = "Active" if any_blocking else "Inactive"
+        return f"● Extension: Connected ({browsers_label} — {blocking_label})"
 
     def build_menu(self) -> Menu:
         """Construct dynamic tray context menu."""
@@ -231,6 +252,7 @@ class TrayApp:
             ),
             Menu.SEPARATOR,
             item("Settings...", self.on_open_settings),
+            item("Extension Setup...", self.on_open_extension_setup),
             item(
                 "Start Scheduler",
                 self.on_start,
@@ -257,6 +279,19 @@ class TrayApp:
                 logger.exception("Error starting local API server: %s", err)
         self._start_status_updater()
         self.update_tray_state()
+
+        # Trigger first-run browser extension onboarding on background thread
+        try:
+            from gtfb.ui.extension_dialog import check_and_run_first_time_setup
+
+            threading.Thread(
+                target=check_and_run_first_time_setup,
+                name="GTFBFirstRunSetupThread",
+                daemon=True,
+            ).start()
+        except Exception as first_run_err:
+            logger.debug("First run check skipped: %s", first_run_err)
+
         self.icon.run(setup=setup)
 
     def on_quit(self, icon: Optional[pystray.Icon] = None, item: Optional[item] = None) -> None:
@@ -264,13 +299,14 @@ class TrayApp:
         logger.info("Shutting down GTFB system tray application...")
         self._stop_status_updater()
 
-        # Close active settings window if open
-        settings_instance = SettingsWindow.get_instance()
-        if settings_instance:
-            try:
-                settings_instance.close()
-            except Exception as err:
-                logger.debug("Error closing settings window on quit: %s", err)
+        # Cleanly shutdown UIManager if active
+        try:
+            from gtfb.ui.manager import UIManager
+
+            if UIManager._instance is not None:
+                UIManager._instance.shutdown()
+        except Exception as err:
+            logger.debug("Error shutting down UIManager on quit: %s", err)
 
         if self.scheduler:
             try:
@@ -296,3 +332,4 @@ class TrayApp:
     def stop(self) -> None:
         """Programmatically stop the tray application."""
         self.on_quit()
+

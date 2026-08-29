@@ -112,9 +112,20 @@ def get_icon(
     if icon_path:
         candidates.append(Path(icon_path))
 
+    # PyInstaller frozen bundle support
+    import sys
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        meipass = Path(sys._MEIPASS)
+        candidates.append(meipass / "assets" / "icons" / f"{state_key}.png")
+        candidates.append(meipass / "assets" / f"{state_key}.png")
+        candidates.append(meipass / "assets" / "icons" / "icon.png")
+        candidates.append(meipass / "assets" / "icon.png")
+
     # State-specific icon assets
     candidates.append(Path(__file__).resolve().parent.parent / "assets" / "icons" / f"{state_key}.png")
+    candidates.append(Path(__file__).resolve().parent.parent / "assets" / f"{state_key}.png")
     candidates.append(Path("assets/icons") / f"{state_key}.png")
+    candidates.append(Path("assets") / f"{state_key}.png")
 
     for path in candidates:
         try:
