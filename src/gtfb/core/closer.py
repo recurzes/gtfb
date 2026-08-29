@@ -16,9 +16,8 @@ from gtfb.config import (
     DEFAULT_TARGET_MINUTE,
     SYSTEM_EXCLUDED_PROCESSES,
 )
+from gtfb.core import platform_utils
 from gtfb.core.platform_utils import (
-    CURRENT_OS,
-    PYWIN32_AVAILABLE,
     get_gui_windows_pywin32,
     is_gui_application,
 )
@@ -31,7 +30,7 @@ def close_application_gracefully_windows(proc: psutil.Process, window_title: Opt
 
     Falls back to proc.terminate() if pywin32 is not available or WM_CLOSE fails.
     """
-    if not PYWIN32_AVAILABLE:
+    if not platform_utils.PYWIN32_AVAILABLE:
         proc.terminate()
         return False
 
@@ -60,7 +59,7 @@ def close_application(proc: psutil.Process, window_title: Optional[str] = None, 
     """Close a single process gracefully, escalating to force kill if unresponsive."""
     proc_name = proc.name()
     try:
-        if CURRENT_OS == "Windows" and PYWIN32_AVAILABLE:
+        if platform_utils.CURRENT_OS == "Windows" and platform_utils.PYWIN32_AVAILABLE:
             close_application_gracefully_windows(proc, window_title)
         else:
             proc.terminate()
@@ -81,7 +80,7 @@ def get_running_gui_apps() -> List[Tuple[psutil.Process, str]]:
     """Scan and return a list of running GUI applications as (Process, title_or_name) tuples."""
     apps: List[Tuple[psutil.Process, str]] = []
 
-    if CURRENT_OS == "Windows" and PYWIN32_AVAILABLE:
+    if platform_utils.CURRENT_OS == "Windows" and platform_utils.PYWIN32_AVAILABLE:
         gui_windows = get_gui_windows_pywin32()
         for pid, title in gui_windows.items():
             try:
@@ -162,26 +161,26 @@ def shutdown_system(
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Initiating system shutdown....")
     message = f"Scheduled shutdown at {target_hour:02d}:{target_minute:02d}"
 
-    if CURRENT_OS == "Windows":
+    if platform_utils.CURRENT_OS == "Windows":
         print(f"System will shut down in {delay_seconds} seconds.")
         os.system(f'shutdown /s /t {delay_seconds} /c "{message}"')
-    elif CURRENT_OS == "Linux":
+    elif platform_utils.CURRENT_OS == "Linux":
         print("System will shut down in 1 minute")
         print("Note: This requires sudo privileges")
         os.system(f"shutdown -h +1 '{message}'")
-    elif CURRENT_OS == "Darwin":
+    elif platform_utils.CURRENT_OS == "Darwin":
         print("System will shut down in 1 minute")
         print("Note: This requires sudo privileges")
         os.system(f"sudo shutdown -h +1 '{message}'")
     else:
-        print(f"Error: Unsupported operating system '{CURRENT_OS}'")
+        print(f"Error: Unsupported operating system '{platform_utils.CURRENT_OS}'")
 
 
 def check_privileges() -> None:
     """Check required OS privileges on Unix-based systems."""
-    if CURRENT_OS in ["Linux", "Darwin"]:
+    if platform_utils.CURRENT_OS in ["Linux", "Darwin"]:
         if hasattr(os, "geteuid") and os.geteuid() != 0:
-            print(f"\nWarning: Running on {CURRENT_OS} without root privileges")
+            print(f"\nWarning: Running on {platform_utils.CURRENT_OS} without root privileges")
             print("The scripts can close applications but may not shutdown the system")
             print(f"To enable shutdown, run: sudo python3 {os.path.basename(__file__)}\n")
             response = input("Continue anyway? (y/n): ")
