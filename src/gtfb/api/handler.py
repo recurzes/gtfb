@@ -87,20 +87,20 @@ class GTFBRequestHandler(BaseHTTPRequestHandler):
                 self._send_cors_headers()
                 self.end_headers()
 
-                # Send initial state event
-                init_msg = json.dumps({
-                    "type": "init",
-                    "config": config_data,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
-                self.wfile.write(f"data: {init_msg}\n\n".encode("utf-8"))
-                self.wfile.flush()
-
                 client_q: queue.Queue = queue.Queue()
                 if server_inst is not None:
                     server_inst.register_sse_client(client_q)
 
                 try:
+                    # Send initial state event
+                    init_msg = json.dumps({
+                        "type": "init",
+                        "config": config_data,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                    self.wfile.write(f"data: {init_msg}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+
                     while True:
                         try:
                             event = client_q.get(timeout=15.0)
