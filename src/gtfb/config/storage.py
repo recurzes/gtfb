@@ -42,6 +42,11 @@ def get_config_path(filename: str = "config.json", app_name: str = "GTFB") -> Pa
     return get_config_dir(app_name=app_name) / filename
 
 
+def get_log_path(filename: str = "bedtime.log", app_name: str = "GTFB") -> Path:
+    """Return full path to the log file in the standard OS user config directory."""
+    return get_config_dir(app_name=app_name) / filename
+
+
 def save_config_atomic(
     profile: ConfigProfile, path: Optional[Union[str, Path]] = None
 ) -> Path:
