@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GTFB Extension</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="header">
+      <div class="brand">
+        <img src="../icons/icon48.png" alt="GTFB Icon" class="logo">
+        <div class="brand-text">
+          <h1 class="title">GTFB</h1>
+          <span class="subtitle">Anti-Distraction Suite</span>
+        </div>
+      </div>
+      <span class="version-badge">v1.0.0</span>
+    </header>
+
+    <main class="content">
+      <div class="status-card">
+        <div class="status-header">
+          <span class="status-dot active"></span>
+          <span class="status-label" id="status-text">Extension Active</span>
+        </div>
+        <p class="status-description" id="status-desc">
+          Manifest V3 service worker initialized and monitoring bedtime schedules.
+        </p>
+      </div>
+
+      <div class="info-card">
+        <div class="info-row">
+          <span class="info-key">Mode</span>
+          <span class="info-val">Standalone MVP</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Protection</span>
+          <span class="info-val highlight">Ready</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span class="footer-note">Scheduled domain blocking</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
