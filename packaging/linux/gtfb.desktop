@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=GTFB
+Comment=Anti-Distraction Suite
+Exec=gtfb
+Icon=gtfb
+Terminal=false
+Type=Application
+Categories=Utility;Productivity;
+StartupNotify=false
