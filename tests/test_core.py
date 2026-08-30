@@ -44,24 +44,27 @@ class TestSchedulerLogic(unittest.TestCase):
     """Test scheduler delay calculation."""
 
     def test_calculate_delay_future_today(self):
-        now = datetime.now()
-        # Set target 2 hours ahead
-        future_time = now + timedelta(hours=2)
-        delay, target_dt = calculate_delay(future_time.hour, future_time.minute)
-        self.assertGreater(delay, 0)
-        self.assertLessEqual(delay, 2 * 3600 + 60)
-        self.assertEqual(target_dt.hour, future_time.hour)
-        self.assertEqual(target_dt.minute, future_time.minute)
+        fixed_now = datetime(2026, 8, 29, 14, 0, 0)
+        future_time = fixed_now + timedelta(hours=2)
+        with unittest.mock.patch("gtfb.core.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            delay, target_dt = calculate_delay(future_time.hour, future_time.minute)
+            self.assertGreater(delay, 0)
+            self.assertLessEqual(delay, 2 * 3600 + 60)
+            self.assertEqual(target_dt.hour, future_time.hour)
+            self.assertEqual(target_dt.minute, future_time.minute)
+            self.assertEqual(target_dt.date(), fixed_now.date())
 
     def test_calculate_delay_past_today_wraps_to_tomorrow(self):
-        now = datetime.now()
-        # Set target 2 hours in the past
-        past_time = now - timedelta(hours=2)
-        delay, target_dt = calculate_delay(past_time.hour, past_time.minute)
-        # Should wrap to next day, delay should be between 20h and 24h
-        self.assertGreater(delay, 20 * 3600)
-        self.assertLessEqual(delay, 24 * 3600)
-        self.assertEqual(target_dt.date(), (now + timedelta(days=1)).date())
+        fixed_now = datetime(2026, 8, 29, 14, 0, 0)
+        past_time = fixed_now - timedelta(hours=2)
+        with unittest.mock.patch("gtfb.core.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            delay, target_dt = calculate_delay(past_time.hour, past_time.minute)
+            # Should wrap to next day, delay should be between 20h and 24h
+            self.assertGreater(delay, 20 * 3600)
+            self.assertLessEqual(delay, 24 * 3600)
+            self.assertEqual(target_dt.date(), (fixed_now + timedelta(days=1)).date())
 
 
 class TestPlatformAndProcessUtils(unittest.TestCase):

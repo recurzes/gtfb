@@ -184,6 +184,20 @@ def test_node_background_toggle_and_lock():
       throw new Error("Badge should be cleared after toggle off post-expiration");
     }}
 
+    // 6. Test manual toggle OFF persistence during bedtime schedule
+    const {{ evaluateCurrentSchedule }} = await import('{bg_path.as_uri()}');
+    const bedtime = new Date(2026, 7, 29, 23, 0, 0); // 23:00
+    await evaluateCurrentSchedule(bedtime);
+    if (storageState.isBlockingActive !== false) {{
+      throw new Error("evaluateCurrentSchedule re-enabled blocking after manual toggle OFF!");
+    }}
+    if (badgeState.text !== "") {{
+      throw new Error("Badge should remain empty after manual toggle OFF during schedule check");
+    }}
+    if (dynamicRules.length !== 0) {{
+      throw new Error("Dynamic rules should remain empty after manual toggle OFF");
+    }}
+
     console.log("BACKGROUND_JS_TESTS_PASSED");
     """
 

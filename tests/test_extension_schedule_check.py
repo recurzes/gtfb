@@ -254,6 +254,39 @@ def test_node_background_schedule_alarm_and_evaluation():
       throw new Error("Alarm listener was not registered or invoked");
     }}
 
+    // 6. Verify Manual Override OFF persistence during bedtime window
+    storageState.lockedUntil = null;
+    storageState.isBlockingActive = false;
+    storageState.manualOverride = false;
+    dynamicRules = [];
+    badgeState = {{ text: "", color: "" }};
+
+    await evaluateCurrentSchedule(bedtime); // 23:00 (inside bedtime window)
+    if (storageState.isBlockingActive !== false) {{
+      throw new Error("Schedule check MUST NOT re-enable blocking when user manually disabled it (manualOverride === false)!");
+    }}
+    if (badgeState.text !== "") {{
+      throw new Error("Badge text should remain empty when manually disabled during bedtime");
+    }}
+    if (dynamicRules.length !== 0) {{
+      throw new Error("Dynamic rules should not be applied when manually disabled during bedtime");
+    }}
+
+    // 7. Verify exiting schedule window resets manualOverride so next night's bedtime turns on
+    await evaluateCurrentSchedule(morning); // 08:00 (outside bedtime window)
+    if (storageState.manualOverride !== null) {{
+      throw new Error("manualOverride should be reset to null after exiting the schedule window");
+    }}
+
+    // Next night bedtime engages automatically
+    await evaluateCurrentSchedule(bedtime); // 23:00 next night
+    if (storageState.isBlockingActive !== true) {{
+      throw new Error("Blocking should engage automatically for the next scheduled bedtime after window reset");
+    }}
+    if (badgeState.text !== "ON") {{
+      throw new Error("Badge text should be 'ON' for the next scheduled bedtime");
+    }}
+
     console.log("BACKGROUND_SCHEDULE_TESTS_PASSED");
     """
 
