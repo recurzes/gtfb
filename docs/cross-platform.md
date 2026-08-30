@@ -90,8 +90,9 @@ To ensure seamless installation and execution on all platforms:
   ```
 - All modules import OS-specific libraries (`win32gui`, `win32con`, `win32process`) inside conditional checks and `try...except` blocks with fallback mechanisms.
 - **Standalone OS Packaging with PyInstaller:**
-  - **Windows:** Spec at `packaging/windows/gtfb.spec`, automated build script `scripts/build_windows.py` / `build_windows.bat` creating a windowless `gtfb.exe` binary.
+  - **Windows:** Spec at `packaging/windows/gtfb.spec`, automated build script `scripts/build_windows.py` / `build_windows.bat` creating a windowless `gtfb.exe` binary. See [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
   - **macOS:** Spec at `packaging/macos/gtfb.spec`, automated build script `scripts/build_macos.py` / `build_macos.sh` creating native `GTFB.app` bundle with `LSUIElement=true` (runs as a top menu bar agent app without a Dock icon). See [BUILD_MACOS.md](BUILD_MACOS.md) for full build instructions and Gatekeeper bypass guide.
+  - **Linux:** Spec at `packaging/linux/gtfb.spec`, automated build script `scripts/build_linux.py` / `build_linux.sh` producing standalone ELF binary and XDG desktop entry `packaging/linux/gtfb.desktop`. See [BUILD_LINUX.md](BUILD_LINUX.md) for distribution prerequisites and menu integration.
 
 
 ---
