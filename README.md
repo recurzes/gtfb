@@ -85,20 +85,21 @@ graph TD
 
 ## Key Features
 
-- **🛡️ Smart OS-Level Application Closer**  
+- **Smart OS-Level Application Closer**  
   Scans active processes, accurately distinguishes user GUI applications from essential system daemons, sends graceful close signals (`WM_CLOSE` / `SIGTERM`), and enforces fallback termination after a configurable grace period.
-- **🌐 Cross-Browser Website Blocking**  
+- **Cross-Browser Website Blocking**  
   Uses native WebExtensions Manifest V3 `declarativeNetRequest` rules to block distracting domains on **Google Chrome**, **Microsoft Edge**, **Brave**, and **Mozilla Firefox** with zero network latency.
-- **🔄 Instant Localhost Synchronization**  
+- **Instant Localhost Synchronization**  
   Embedded loopback API server (`127.0.0.1`) keeps browser extensions synchronized with desktop settings via dynamic port discovery and real-time events.
-- **🖥️ System Tray Background Daemon**  
+- **System Tray Background Daemon**  
   Lives quietly in your Windows Notification Area, macOS Menu Bar, or Linux System Tray with live countdown tooltips, dynamic colored status icons, and quick-action menus.
-- **⚙️ Unified Settings GUI**  
+- **Unified Settings GUI**  
   A clean desktop settings window to adjust bedtime hours, shutdown toggles, startup options, and manage blocked domain lists with duplicate detection and URL sanitization.
-- **🚀 Automated Startup Integration**  
+- **Automated Startup Integration**  
   One-click registration for Windows Startup (visible in Windows Task Manager > Startup apps), macOS LaunchAgents, or Linux XDG autostart.
-- **💾 Crash-Proof Atomic Storage**  
+- **Crash-Proof Atomic Storage**  
   Config and port files use atomic write-and-rename patterns with automatic backup fallback to ensure settings are never corrupted by unexpected shutdowns.
+
 
 ---
 
@@ -213,10 +214,11 @@ Click the GTFB icon in your system tray / menu bar to access controls:
 
 | Icon | State | Meaning |
 |---|---|---|
-| 🟢 **Green** | **Active & Synced** | Scheduler running, bedtime countdown active, extension connected. |
-| 🟡 **Yellow** | **Warning / Disconnected** | Scheduler running, but browser extension has not synced recently. |
-| ⚪ **Gray** | **Idle / Paused** | Scheduler paused or manual override active. |
-| 🔴 **Red** | **Bedtime Triggered** | Bedtime reached; app closing and site redirection in progress. |
+| **Green** | **Active & Synced** | Scheduler running, bedtime countdown active, extension connected. |
+| **Yellow** | **Warning / Disconnected** | Scheduler running, but browser extension has not synced recently. |
+| **Gray** | **Idle / Paused** | Scheduler paused or manual override active. |
+| **Red** | **Bedtime Triggered** | Bedtime reached; app closing and site redirection in progress. |
+
 
 ### Unified Settings Window
 
@@ -373,14 +375,15 @@ gtfb/
 ## Documentation Index
 
 For detailed guides, please refer to:
-- 📖 **[User Overview & User Guide](docs/USER_GUIDE.md):** Complete guide to features, configuration, and best practices.
-- 💻 **[Cross-Platform Guide](docs/cross-platform.md):** Platform requirements, permissions, and behavior notes for Windows, macOS, and Linux.
-- 🦊 **[Firefox Compatibility Guide](docs/firefox_guide.md):** Step-by-step Firefox Add-on setup and temporary/developer installation.
-- 🔌 **[Local API Reference](docs/api_reference.md):** Endpoints, payload contracts, SSE events, and security specifications.
-- 🪟 **[Windows Build Guide](docs/BUILD_WINDOWS.md):** Building standalone `gtfb.exe` binaries with PyInstaller.
-- 🍏 **[macOS Build Guide](docs/BUILD_MACOS.md):** Building `GTFB.app` bundles on macOS.
-- 🐧 **[Linux Build Guide](docs/BUILD_LINUX.md):** Building Linux standalone binaries and desktop launchers.
-- 🧪 **[End-to-End Testing Guide](docs/e2e_testing.md):** Comprehensive manual and automated verification checklist.
+- **[User Overview & User Guide](docs/USER_GUIDE.md):** Complete guide to features, configuration, and best practices.
+- **[Cross-Platform Guide](docs/cross-platform.md):** Platform requirements, permissions, and behavior notes for Windows, macOS, and Linux.
+- **[Firefox Compatibility Guide](docs/firefox_guide.md):** Step-by-step Firefox Add-on setup and temporary/developer installation.
+- **[Local API Reference](docs/api_reference.md):** Endpoints, payload contracts, SSE events, and security specifications.
+- **[Windows Build Guide](docs/BUILD_WINDOWS.md):** Building standalone `gtfb.exe` binaries with PyInstaller.
+- **[macOS Build Guide](docs/BUILD_MACOS.md):** Building `GTFB.app` bundles on macOS.
+- **[Linux Build Guide](docs/BUILD_LINUX.md):** Building Linux standalone binaries and desktop launchers.
+- **[End-to-End Testing Guide](docs/e2e_testing.md):** Comprehensive manual and automated verification checklist.
+
 
 ---
 
