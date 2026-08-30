@@ -77,14 +77,16 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
 
   let isBlockingActive = false;
   let isLocked = false;
-  let manualOverride = false;
+  let manualOverride = null;
 
   if (extApi.storage && extApi.storage.local) {
     const status = await getBlockingStatus();
     isBlockingActive = status.isBlockingActive;
     isLocked = status.isLocked;
     const stored = await extApi.storage.local.get(["manualOverride"]);
-    manualOverride = Boolean(stored && stored.manualOverride);
+    if (stored && stored.manualOverride !== undefined && stored.manualOverride !== null) {
+      manualOverride = Boolean(stored.manualOverride);
+    }
   }
 
   // If focus lock is currently active, ensure rules are applied with focus lock state
@@ -104,7 +106,21 @@ export async function evaluateCurrentSchedule(nowOverride = null, scheduleOverri
     return;
   }
 
-  if (shouldBlock || manualOverride) {
+  // Determine effective blocking state based on schedule and explicit manual overrides
+  let effectiveBlock = false;
+  if (manualOverride === false) {
+    // If the scheduled window has passed (outside window), reset manual override to null so the next schedule window engages normally
+    if (!shouldBlock && extApi.storage && extApi.storage.local) {
+      await extApi.storage.local.set({ manualOverride: null });
+    }
+    effectiveBlock = false;
+  } else if (manualOverride === true) {
+    effectiveBlock = true;
+  } else {
+    effectiveBlock = shouldBlock;
+  }
+
+  if (effectiveBlock) {
     await applyBlockRules();
     if (extApi.action && typeof extApi.action.setBadgeText === "function") {
       await extApi.action.setBadgeText({ text: "ON" });
