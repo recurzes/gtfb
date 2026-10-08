@@ -157,6 +157,8 @@ def main(argv: list[str] | None = None) -> int:
                 target_minute=schedule.target_minute,
                 shutdown=not args.no_shutdown,
                 dry_run=args.dry_run,
+                grace_period=schedule.grace_period_seconds,
+                force_kill=schedule.force_kill_after_grace,
             )
             return 0
         except KeyboardInterrupt:
@@ -174,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             shutdown=not args.no_shutdown,
             enabled=schedule.enabled,
+            grace_period_seconds=schedule.grace_period_seconds,
+            force_kill=schedule.force_kill_after_grace,
         )
         app = TrayApp(scheduler=scheduler, config=config)
         app.run()

@@ -36,6 +36,8 @@ class TestAppStartupWiring(unittest.TestCase):
         self.assertEqual(scheduler.target_hour, 23)
         self.assertEqual(scheduler.target_minute, 15)
         self.assertFalse(scheduler.enabled)
+        self.assertEqual(scheduler.grace_period_seconds, 15)
+        self.assertTrue(scheduler.force_kill)
         self.assertIs(kwargs["config"], profile)
         mock_tray.return_value.run.assert_called_once()
 
@@ -59,6 +61,8 @@ class TestAppStartupWiring(unittest.TestCase):
             target_minute=15,
             shutdown=False,
             dry_run=False,
+            grace_period=15,
+            force_kill=True,
         )
 
     def test_unreadable_config_falls_back_to_defaults(self):

@@ -58,6 +58,8 @@ class BedtimeScheduler:
         enabled: bool = True,
         late_tolerance: float = 300.0,
         enforcing_hold: float = 60.0,
+        grace_period_seconds: Optional[float] = None,
+        force_kill: Optional[bool] = None,
     ) -> None:
         self.target_hour = target_hour
         self.target_minute = target_minute
@@ -69,6 +71,9 @@ class BedtimeScheduler:
         self.late_tolerance = late_tolerance
         # How long the ENFORCING state is reported after a trigger before counting down again
         self.enforcing_hold = enforcing_hold
+        # Closer settings; None leaves the closer's own defaults in effect
+        self.grace_period_seconds = grace_period_seconds
+        self.force_kill = force_kill
         self.closer_fn = closer_fn or close_gui_apps
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -86,6 +91,8 @@ class BedtimeScheduler:
             self.target_hour = schedule.target_hour
             self.target_minute = schedule.target_minute
             self.enabled = schedule.enabled
+            self.grace_period_seconds = schedule.grace_period_seconds
+            self.force_kill = schedule.force_kill_after_grace
             logger.info(
                 "Scheduler updated in-memory: Bedtime set to %02d:%02d (enabled=%s)",
                 self.target_hour,
@@ -186,8 +193,14 @@ class BedtimeScheduler:
     def _enforce_bedtime(self) -> None:
         """Run the application closing routine and optional system shutdown."""
         logger.warning("Bedtime reached! Executing application closing routine.")
+        closer_kwargs: dict[str, Any] = {"dry_run": self.dry_run}
+        if self.grace_period_seconds is not None:
+            closer_kwargs["grace_period"] = self.grace_period_seconds
+        if self.force_kill is not None:
+            closer_kwargs["force_kill"] = self.force_kill
+
         try:
-            self.closer_fn(dry_run=self.dry_run)
+            self.closer_fn(**closer_kwargs)
         except TypeError:
             self.closer_fn()
         except Exception as err:
@@ -311,6 +324,8 @@ def run_scheduler_cli(
     target_minute: int = DEFAULT_TARGET_MINUTE,
     shutdown: bool = True,
     dry_run: bool = False,
+    grace_period: Optional[float] = None,
+    force_kill: bool = True,
 ) -> None:
     """CLI runner executing the complete bedtime automation routine."""
     print(f"\nDetected Operating System: {CURRENT_OS}")
@@ -338,7 +353,10 @@ def run_scheduler_cli(
     if not completed:
         return
 
-    close_gui_applications()
+    if grace_period is None:
+        close_gui_applications(force_kill=force_kill)
+    else:
+        close_gui_applications(grace_period=grace_period, force_kill=force_kill)
 
     if shutdown:
         print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Preparing for system shutdown...")

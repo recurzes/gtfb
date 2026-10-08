@@ -316,6 +316,40 @@ class TestBedtimeScheduler(unittest.TestCase):
         mock_closer.assert_not_called()
         self.assertFalse(scheduler.is_running())
 
+    def test_update_config_applies_grace_period_and_force_kill(self):
+        scheduler = BedtimeScheduler()
+        self.assertIsNone(scheduler.grace_period_seconds)
+        self.assertIsNone(scheduler.force_kill)
+
+        scheduler.update_config(
+            ConfigProfile(
+                app_close_schedule=AppCloseSchedule(
+                    grace_period_seconds=45,
+                    force_kill_after_grace=False,
+                )
+            )
+        )
+
+        self.assertEqual(scheduler.grace_period_seconds, 45)
+        self.assertFalse(scheduler.force_kill)
+
+    def test_scheduler_passes_grace_settings_to_closer(self):
+        mock_closer = MagicMock()
+        scheduler = BedtimeScheduler(
+            check_interval=0.01,
+            closer_fn=mock_closer,
+            grace_period_seconds=45,
+            force_kill=False,
+        )
+
+        past_time = datetime.now() - timedelta(seconds=1)
+        with patch.object(scheduler, "get_next_target", return_value=past_time):
+            scheduler.start()
+            time.sleep(0.1)
+            scheduler.stop()
+
+        mock_closer.assert_called_once_with(dry_run=False, grace_period=45, force_kill=False)
+
     def test_missed_bedtime_beyond_tolerance_is_skipped(self):
         """A target passed long ago (system asleep through bedtime) must not close apps on wake."""
         mock_closer = MagicMock()
