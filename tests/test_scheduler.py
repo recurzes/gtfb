@@ -316,6 +316,79 @@ class TestBedtimeScheduler(unittest.TestCase):
         mock_closer.assert_not_called()
         self.assertFalse(scheduler.is_running())
 
+    def test_missed_bedtime_beyond_tolerance_is_skipped(self):
+        """A target passed long ago (system asleep through bedtime) must not close apps on wake."""
+        mock_closer = MagicMock()
+        mock_shutdown = MagicMock()
+        scheduler = BedtimeScheduler(
+            shutdown=True,
+            check_interval=0.01,
+            closer_fn=mock_closer,
+            late_tolerance=300.0,
+        )
+
+        stale_target = datetime.now() - timedelta(hours=2)
+        with patch.object(scheduler, "get_next_target", return_value=stale_target), \
+             patch("gtfb.core.scheduler.shutdown_system", mock_shutdown):
+            scheduler.start()
+            time.sleep(0.1)
+            try:
+                mock_closer.assert_not_called()
+                mock_shutdown.assert_not_called()
+                # Still armed for the next day
+                self.assertTrue(scheduler.is_running())
+                self.assertEqual(scheduler.state, "COUNTING_DOWN")
+            finally:
+                scheduler.stop()
+
+    def test_scheduler_rearms_after_trigger_without_refiring(self):
+        mock_closer = MagicMock()
+        scheduler = BedtimeScheduler(dry_run=True, check_interval=0.01, closer_fn=mock_closer)
+
+        past_time = datetime.now() - timedelta(seconds=1)
+        with patch.object(scheduler, "get_next_target", return_value=past_time):
+            scheduler.start()
+            time.sleep(0.15)
+            try:
+                # Worker thread stays alive for the next day and does not fire again
+                self.assertTrue(scheduler.is_running())
+                mock_closer.assert_called_once_with(dry_run=True)
+            finally:
+                scheduler.stop()
+
+    def test_state_returns_to_counting_down_after_enforcing_hold(self):
+        scheduler = BedtimeScheduler(
+            dry_run=True,
+            check_interval=0.01,
+            closer_fn=MagicMock(),
+            enforcing_hold=0.05,
+        )
+
+        past_time = datetime.now() - timedelta(seconds=1)
+        with patch.object(scheduler, "get_next_target", return_value=past_time):
+            scheduler.start()
+            try:
+                time.sleep(0.02)
+                self.assertEqual(scheduler.state, "ENFORCING")
+                time.sleep(0.2)
+                self.assertEqual(scheduler.state, "COUNTING_DOWN")
+            finally:
+                scheduler.stop()
+
+    def test_disabled_scheduler_keeps_running_for_next_day(self):
+        mock_closer = MagicMock()
+        scheduler = BedtimeScheduler(check_interval=0.01, closer_fn=mock_closer, enabled=False)
+
+        past_time = datetime.now() - timedelta(seconds=1)
+        with patch.object(scheduler, "get_next_target", return_value=past_time):
+            scheduler.start()
+            time.sleep(0.1)
+            try:
+                mock_closer.assert_not_called()
+                self.assertTrue(scheduler.is_running())
+            finally:
+                scheduler.stop()
+
 
 if __name__ == "__main__":
     unittest.main()
