@@ -247,9 +247,9 @@ def test_node_rules_with_storage_cache():
     }}
 
     const appliedFilters = dynamicRules.map(r => r.condition.urlFilter);
-    if (!appliedFilters.includes("||discord.com") ||
-        !appliedFilters.includes("||twitch.tv") ||
-        !appliedFilters.includes("||netflix.com")) {{
+    if (!appliedFilters.includes("||discord.com^") ||
+        !appliedFilters.includes("||twitch.tv^") ||
+        !appliedFilters.includes("||netflix.com^")) {{
       throw new Error(`Rules do not match custom cachedConfig: ${{JSON.stringify(appliedFilters)}}`);
     }}
 
@@ -363,7 +363,7 @@ def test_node_storage_persistence_across_restarts():
       throw new Error(`Expected 2 custom rules applied, got ${{dynamicRules.length}}`);
     }}
     const appliedDomains = dynamicRules.map(r => r.condition.urlFilter);
-    if (!appliedDomains.includes("||bilibili.com") || !appliedDomains.includes("||weibo.com")) {{
+    if (!appliedDomains.includes("||bilibili.com^") || !appliedDomains.includes("||weibo.com^")) {{
       throw new Error(`Applied rules mismatch: ${{JSON.stringify(appliedDomains)}}`);
     }}
 

@@ -108,7 +108,7 @@ def test_node_rules_module_execution():
       if (!rule.action || rule.action.type !== "redirect" || !rule.action.redirect?.extensionPath?.startsWith("/src/blocked.html")) {{
         throw new Error(`Invalid action for rule ${{rule.id}}`);
       }}
-      if (!rule.condition || rule.condition.urlFilter !== `||${{TEST_DOMAINS[idx]}}`) {{
+      if (!rule.condition || rule.condition.urlFilter !== `||${{TEST_DOMAINS[idx]}}^`) {{
         throw new Error(`Invalid condition urlFilter for rule ${{rule.id}}`);
       }}
       if (!Array.isArray(rule.condition.resourceTypes) || !rule.condition.resourceTypes.includes("main_frame")) {{
@@ -129,13 +129,13 @@ def test_node_rules_module_execution():
     if (customRules.length !== 3) {{
       throw new Error(`Expected 3 deduplicated custom rules, got ${{customRules.length}}`);
     }}
-    if (customRules[0].condition.urlFilter !== "||facebook.com") {{
+    if (customRules[0].condition.urlFilter !== "||facebook.com^") {{
       throw new Error("Custom rule 0 urlFilter mismatch");
     }}
-    if (customRules[1].condition.urlFilter !== "||tiktok.com") {{
+    if (customRules[1].condition.urlFilter !== "||tiktok.com^") {{
       throw new Error("Custom rule 1 urlFilter mismatch");
     }}
-    if (customRules[2].condition.urlFilter !== "||threads.net") {{
+    if (customRules[2].condition.urlFilter !== "||threads.net^") {{
       throw new Error("Custom rule 2 urlFilter mismatch");
     }}
 
@@ -188,6 +188,46 @@ def test_node_rules_module_execution():
         ["node", "--input-type=module", "-e", js_test_script],
         capture_output=True,
         text=True,
+        check=False
+    )
+
+    assert res.returncode == 0, f"Node tests failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
+    assert "ALL_JS_TESTS_PASSED" in res.stdout
+
+
+def test_node_rules_drop_invalid_domains_and_anchor_hostname():
+    """Invalid domains are skipped, international names are punycoded, and filters end the hostname."""
+    rules_file_url = (SRC_DIR / "rules.js").as_uri()
+
+    js_test_script = f"""
+    import {{ compileBlockRules, isValidDomain, toAsciiDomain }} from '{rules_file_url}';
+
+    const rules = compileBlockRules(["reddit.com", "foo bar", "a,b", "", "münchen.de", "x.com"]);
+    const filters = rules.map((r) => r.condition.urlFilter);
+    const expected = ["||reddit.com^", "||xn--mnchen-3ya.de^", "||x.com^"];
+    if (JSON.stringify(filters) !== JSON.stringify(expected)) {{
+      throw new Error(`Unexpected filters: ${{JSON.stringify(filters)}}`);
+    }}
+    rules.forEach((rule, idx) => {{
+      if (rule.id !== idx + 1) throw new Error("Rule ids must stay sequential after dropping entries");
+    }});
+
+    if (toAsciiDomain("foo bar") !== "") throw new Error("toAsciiDomain should reject spaces");
+    if (!isValidDomain("news.ycombinator.com") || !isValidDomain("localhost")) {{
+      throw new Error("isValidDomain rejected a valid hostname");
+    }}
+    for (const bad of ["", "a,b", "-bad.com", "bad-.com", "a..b", null]) {{
+      if (isValidDomain(bad)) throw new Error(`isValidDomain accepted ${{bad}}`);
+    }}
+
+    console.log("ALL_JS_TESTS_PASSED");
+    """
+
+    res = subprocess.run(
+        ["node", "--input-type=module", "-e", js_test_script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
         check=False
     )
 

@@ -68,5 +68,14 @@ class TestDomainSanitizer(unittest.TestCase):
         self.assertEqual(clean_domain_input("example.com:8000"), "example.com")
 
 
+    def test_clean_rejects_invalid_hostnames(self):
+        for raw in ("foo bar", "a,b", "exa_mple.com", "-bad.com", "bad-.com", "a..b"):
+            with self.subTest(raw=raw):
+                self.assertEqual(clean_domain_input(raw), "")
+
+    def test_clean_converts_international_domain_to_punycode(self):
+        self.assertEqual(clean_domain_input("https://münchen.de/path"), "xn--mnchen-3ya.de")
+
+
 if __name__ == "__main__":
     unittest.main()

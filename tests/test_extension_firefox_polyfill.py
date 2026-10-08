@@ -204,8 +204,8 @@ def test_node_firefox_storage_and_rules_promise_mode():
     if (rules.length !== 2 || dynamicRulesState.length !== 2) {{
       throw new Error(`Firefox mode: Expected 2 dynamic rules, got ${{dynamicRulesState.length}}`);
     }}
-    if (dynamicRulesState[0].condition.urlFilter !== "||firefox.com" ||
-        dynamicRulesState[1].condition.urlFilter !== "||mozilla.org") {{
+    if (dynamicRulesState[0].condition.urlFilter !== "||firefox.com^" ||
+        dynamicRulesState[1].condition.urlFilter !== "||mozilla.org^") {{
       throw new Error("Firefox mode: Dynamic rule filters mismatch");
     }}
 

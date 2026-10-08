@@ -68,7 +68,7 @@ def test_node_sync_and_apply_rules_unit():
     if (compiled[1].action.redirect.extensionPath !== "/src/blocked.html?domain=youtube.com") {{
       throw new Error(`Redirect path mismatch for youtube: ${{compiled[1].action.redirect.extensionPath}}`);
     }}
-    if (compiled[1].condition.urlFilter !== "||youtube.com") {{
+    if (compiled[1].condition.urlFilter !== "||youtube.com^") {{
       throw new Error(`urlFilter mismatch: ${{compiled[1].condition.urlFilter}}`);
     }}
 
@@ -117,17 +117,17 @@ def test_node_sync_and_apply_rules_unit():
     }}
 
     const filters = dynamicRules.map(r => r.condition.urlFilter);
-    if (!filters.includes("||news.ycombinator.com") ||
-        !filters.includes("||reddit.com") ||
-        !filters.includes("||twitter.com")) {{
+    if (!filters.includes("||news.ycombinator.com^") ||
+        !filters.includes("||reddit.com^") ||
+        !filters.includes("||twitter.com^")) {{
       throw new Error(`Applied filters mismatch: ${{JSON.stringify(filters)}}`);
     }}
-    if (filters.includes("||facebook.com")) {{
+    if (filters.includes("||facebook.com^")) {{
       throw new Error("Inactive rule domain facebook.com must NOT be in dynamic rules");
     }}
 
     // Check redirect paths
-    const hnRule = dynamicRules.find(r => r.condition.urlFilter === "||news.ycombinator.com");
+    const hnRule = dynamicRules.find(r => r.condition.urlFilter === "||news.ycombinator.com^");
     if (!hnRule || hnRule.action.redirect.extensionPath !== "/src/blocked.html?domain=news.ycombinator.com") {{
       throw new Error(`HN rule redirect invalid: ${{JSON.stringify(hnRule)}}`);
     }}
@@ -235,7 +235,7 @@ def test_node_sync_poll_dynamic_rule_updates_and_removal():
       throw new Error(`Expected 2 dynamic rules after initial sync, got ${{dynamicRules.length}}`);
     }}
     let domainFilters = dynamicRules.map(r => r.condition.urlFilter);
-    if (!domainFilters.includes("||site-a.com") || !domainFilters.includes("||site-b.com")) {{
+    if (!domainFilters.includes("||site-a.com^") || !domainFilters.includes("||site-b.com^")) {{
       throw new Error(`Domain filters mismatch after sync 1: ${{JSON.stringify(domainFilters)}}`);
     }}
 
@@ -264,15 +264,15 @@ def test_node_sync_poll_dynamic_rule_updates_and_removal():
       throw new Error(`Expected 2 dynamic rules after sync 2, got ${{dynamicRules.length}}`);
     }}
     domainFilters = dynamicRules.map(r => r.condition.urlFilter);
-    if (!domainFilters.includes("||site-a.com") || !domainFilters.includes("||news.ycombinator.com")) {{
+    if (!domainFilters.includes("||site-a.com^") || !domainFilters.includes("||news.ycombinator.com^")) {{
       throw new Error(`Domain filters mismatch after sync 2: ${{JSON.stringify(domainFilters)}}`);
     }}
-    if (domainFilters.includes("||site-b.com")) {{
+    if (domainFilters.includes("||site-b.com^")) {{
       throw new Error("Removed domain site-b.com must not be present in dynamic rules!");
     }}
 
     // Check redirect parameter for newly added domain
-    const hnRule = dynamicRules.find(r => r.condition.urlFilter === "||news.ycombinator.com");
+    const hnRule = dynamicRules.find(r => r.condition.urlFilter === "||news.ycombinator.com^");
     if (hnRule.action.redirect.extensionPath !== "/src/blocked.html?domain=news.ycombinator.com") {{
       throw new Error(`Redirect mismatch for HN: ${{hnRule.action.redirect.extensionPath}}`);
     }}
@@ -640,7 +640,7 @@ def test_live_api_server_sync_and_apply_rules_integration():
     }}
 
     // Check redirect url includes query parameter
-    const ruleA = dynamicRules.find(r => r.condition.urlFilter === "||live-site-a.com");
+    const ruleA = dynamicRules.find(r => r.condition.urlFilter === "||live-site-a.com^");
     if (!ruleA || ruleA.action.redirect.extensionPath !== "/src/blocked.html?domain=live-site-a.com") {{
       throw new Error(`Redirect url invalid for ruleA: ${{JSON.stringify(ruleA)}}`);
     }}
