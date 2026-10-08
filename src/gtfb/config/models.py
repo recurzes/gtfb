@@ -2,7 +2,56 @@
 
 from dataclasses import asdict, dataclass, field
 import json
+import logging
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+_TRUE_STRINGS = {"true", "1", "yes", "on"}
+_FALSE_STRINGS = {"false", "0", "no", "off"}
+
+
+def _to_int(
+    value: Any,
+    default: int,
+    lo: Optional[int] = None,
+    hi: Optional[int] = None,
+    strict: bool = True,
+    name: str = "value",
+) -> int:
+    """Convert a raw config value to an int within [lo, hi].
+
+    In strict mode an unconvertible or out-of-range value raises ValueError.
+    Otherwise it is replaced by the field default and a warning is logged.
+    """
+    try:
+        result = int(value)
+        if (lo is not None and result < lo) or (hi is not None and result > hi):
+            raise ValueError(f"{name} out of range: {result}")
+        return result
+    except (TypeError, ValueError) as err:
+        if strict:
+            raise ValueError(f"Invalid {name}: {value!r}") from err
+        logger.warning("Invalid %s %r in config; using default %r", name, value, default)
+        return default
+
+
+def _to_bool(value: Any, default: bool, strict: bool = True, name: str = "value") -> bool:
+    """Convert a raw config value to a bool, understanding "true"/"false" style strings."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in _TRUE_STRINGS:
+            return True
+        if lowered in _FALSE_STRINGS:
+            return False
+    if strict:
+        raise ValueError(f"Invalid {name}: {value!r}")
+    logger.warning("Invalid %s %r in config; using default %r", name, value, default)
+    return default
 
 
 @dataclass
@@ -19,15 +68,19 @@ class AppCloseSchedule:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "AppCloseSchedule":
+    def from_dict(cls, data: Optional[Dict[str, Any]], strict: bool = True) -> "AppCloseSchedule":
         if not isinstance(data, dict):
             return cls()
         return cls(
-            target_hour=int(data.get("target_hour", 22)),
-            target_minute=int(data.get("target_minute", 0)),
-            enabled=bool(data.get("enabled", True)),
-            grace_period_seconds=int(data.get("grace_period_seconds", 15)),
-            force_kill_after_grace=bool(data.get("force_kill_after_grace", True)),
+            target_hour=_to_int(data.get("target_hour", 22), 22, 0, 23, strict, "target_hour"),
+            target_minute=_to_int(data.get("target_minute", 0), 0, 0, 59, strict, "target_minute"),
+            enabled=_to_bool(data.get("enabled", True), True, strict, "enabled"),
+            grace_period_seconds=_to_int(
+                data.get("grace_period_seconds", 15), 15, 0, 300, strict, "grace_period_seconds"
+            ),
+            force_kill_after_grace=_to_bool(
+                data.get("force_kill_after_grace", True), True, strict, "force_kill_after_grace"
+            ),
         )
 
 
@@ -60,23 +113,26 @@ class BlockRule:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "BlockRule":
+    def from_dict(cls, data: Optional[Dict[str, Any]], strict: bool = True) -> "BlockRule":
         if not isinstance(data, dict):
             return cls()
         defaults = cls()
         domains_raw = data.get("domains", defaults.domains)
         if not isinstance(domains_raw, (list, tuple)):
-            raise ValueError(
-                f"BlockRule.domains must be a list, got {type(domains_raw).__name__}"
-            )
+            if strict:
+                raise ValueError(
+                    f"BlockRule.domains must be a list, got {type(domains_raw).__name__}"
+                )
+            logger.warning("Invalid domains %r in config; using default list", domains_raw)
+            domains_raw = defaults.domains
         return cls(
             domains=[str(d) for d in domains_raw],
             trigger_type=str(data.get("trigger_type", "recurring")),
-            start_hour=int(data.get("start_hour", 22)),
-            start_minute=int(data.get("start_minute", 0)),
-            end_hour=int(data.get("end_hour", 6)),
-            end_minute=int(data.get("end_minute", 0)),
-            active=bool(data.get("active", True)),
+            start_hour=_to_int(data.get("start_hour", 22), 22, 0, 23, strict, "start_hour"),
+            start_minute=_to_int(data.get("start_minute", 0), 0, 0, 59, strict, "start_minute"),
+            end_hour=_to_int(data.get("end_hour", 6), 6, 0, 23, strict, "end_hour"),
+            end_minute=_to_int(data.get("end_minute", 0), 0, 0, 59, strict, "end_minute"),
+            active=_to_bool(data.get("active", True), True, strict, "active"),
         )
 
 
@@ -91,12 +147,14 @@ class OverridePolicy:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "OverridePolicy":
+    def from_dict(cls, data: Optional[Dict[str, Any]], strict: bool = True) -> "OverridePolicy":
         if not isinstance(data, dict):
             return cls()
         return cls(
             friction_type=str(data.get("friction_type", "none")),
-            cooldown_minutes=int(data.get("cooldown_minutes", 0)),
+            cooldown_minutes=_to_int(
+                data.get("cooldown_minutes", 0), 0, 0, None, strict, "cooldown_minutes"
+            ),
         )
 
 
@@ -114,7 +172,13 @@ class ConfigProfile:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "ConfigProfile":
+    def from_dict(cls, data: Optional[Dict[str, Any]], strict: bool = True) -> "ConfigProfile":
+        """Build a profile from a raw dictionary.
+
+        With strict=True (default) any invalid or out-of-range field raises ValueError.
+        With strict=False each invalid field falls back to its own default instead,
+        so the remaining valid settings are preserved.
+        """
         if not isinstance(data, dict):
             return cls()
 
@@ -122,14 +186,14 @@ class ConfigProfile:
         if isinstance(app_close_raw, AppCloseSchedule):
             app_close = app_close_raw
         elif isinstance(app_close_raw, dict):
-            app_close = AppCloseSchedule.from_dict(app_close_raw)
+            app_close = AppCloseSchedule.from_dict(app_close_raw, strict)
         else:
             app_close = AppCloseSchedule()
 
         block_rules_raw = data.get("block_rules")
         if isinstance(block_rules_raw, list) and len(block_rules_raw) > 0:
             block_rules = [
-                br if isinstance(br, BlockRule) else BlockRule.from_dict(br)
+                br if isinstance(br, BlockRule) else BlockRule.from_dict(br, strict)
                 for br in block_rules_raw
             ]
         else:
@@ -139,12 +203,12 @@ class ConfigProfile:
         if isinstance(override_raw, OverridePolicy):
             override = override_raw
         elif isinstance(override_raw, dict):
-            override = OverridePolicy.from_dict(override_raw)
+            override = OverridePolicy.from_dict(override_raw, strict)
         else:
             override = OverridePolicy()
 
         return cls(
-            version=int(data.get("version", 1)),
+            version=_to_int(data.get("version", 1), 1, None, None, strict, "version"),
             profile_name=str(data.get("profile_name", "Default")),
             app_close_schedule=app_close,
             block_rules=block_rules,

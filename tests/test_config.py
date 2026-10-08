@@ -164,6 +164,44 @@ class TestConfigModels(unittest.TestCase):
         self.assertEqual(mixed.block_rules[0].domains, ["example.com"])
         self.assertEqual(mixed.override_policy.friction_type, "delay")
 
+    def test_from_dict_strict_rejects_out_of_range_values(self):
+        for field_name, bad_value in (
+            ("target_hour", 99),
+            ("target_hour", -1),
+            ("target_minute", 60),
+            ("grace_period_seconds", 301),
+            ("target_hour", "ten"),
+        ):
+            with self.subTest(field=field_name, value=bad_value):
+                with self.assertRaises(ValueError):
+                    AppCloseSchedule.from_dict({field_name: bad_value})
+
+        with self.assertRaises(ValueError):
+            BlockRule.from_dict({"end_hour": 24})
+        with self.assertRaises(ValueError):
+            ConfigProfile.from_dict({"app_close_schedule": {"target_hour": 99}})
+
+    def test_from_dict_lenient_defaults_only_invalid_fields(self):
+        schedule = AppCloseSchedule.from_dict(
+            {"target_hour": 99, "target_minute": 30, "grace_period_seconds": "soon"},
+            strict=False,
+        )
+        self.assertEqual(schedule.target_hour, 22)
+        self.assertEqual(schedule.target_minute, 30)
+        self.assertEqual(schedule.grace_period_seconds, 15)
+
+        rule = BlockRule.from_dict({"domains": "reddit.com", "start_hour": 21}, strict=False)
+        self.assertEqual(rule.domains, BlockRule().domains)
+        self.assertEqual(rule.start_hour, 21)
+
+    def test_from_dict_parses_boolean_strings(self):
+        self.assertFalse(AppCloseSchedule.from_dict({"enabled": "false"}).enabled)
+        self.assertTrue(AppCloseSchedule.from_dict({"enabled": "true"}).enabled)
+        self.assertFalse(BlockRule.from_dict({"active": 0}).active)
+        with self.assertRaises(ValueError):
+            AppCloseSchedule.from_dict({"enabled": "maybe"})
+        self.assertTrue(AppCloseSchedule.from_dict({"enabled": "maybe"}, strict=False).enabled)
+
 
 class TestConfigStorage(unittest.TestCase):
     """Tests for config path resolution, save_config, and load_config."""

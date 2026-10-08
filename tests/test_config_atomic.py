@@ -239,6 +239,56 @@ class TestConfigResilientLoading(unittest.TestCase):
             loaded = load_config(target_file)
             self.assertEqual(loaded.profile_name, "WrapperTest")
 
+    def test_load_config_resilient_salvages_valid_fields_without_backup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_file = Path(tmpdir) / "config.json"
+
+            data = ConfigProfile(profile_name="Mine").to_dict()
+            data["block_rules"][0]["domains"] = ["mysite.com"]
+            data["app_close_schedule"]["target_hour"] = "ten"
+            data["app_close_schedule"]["target_minute"] = 45
+            with open(target_file, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+            loaded = load_config_resilient(target_file)
+
+            # Only the invalid field is reset; everything else survives
+            self.assertEqual(loaded.app_close_schedule.target_hour, 22)
+            self.assertEqual(loaded.app_close_schedule.target_minute, 45)
+            self.assertEqual(loaded.profile_name, "Mine")
+            self.assertEqual(loaded.block_rules[0].domains, ["mysite.com"])
+
+            with open(target_file, "r", encoding="utf-8") as f:
+                on_disk = json.load(f)
+            self.assertEqual(on_disk["block_rules"][0]["domains"], ["mysite.com"])
+            self.assertEqual(on_disk["app_close_schedule"]["target_hour"], 22)
+
+    def test_load_config_resilient_salvages_out_of_range_hour(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_file = Path(tmpdir) / "config.json"
+
+            data = ConfigProfile().to_dict()
+            data["app_close_schedule"]["target_hour"] = 99
+            with open(target_file, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+            loaded = load_config_resilient(target_file)
+            self.assertEqual(loaded.app_close_schedule.target_hour, 22)
+
+    def test_load_config_resilient_preserves_rejected_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_file = Path(tmpdir) / "config.json"
+            with open(target_file, "w", encoding="utf-8") as f:
+                f.write("{garbage primary json")
+
+            load_config_resilient(target_file)
+
+            preserved = list(Path(tmpdir).glob("config.corrupt-*.json"))
+            self.assertEqual(len(preserved), 1)
+            self.assertEqual(
+                preserved[0].read_text(encoding="utf-8"), "{garbage primary json"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
