@@ -5,7 +5,13 @@ import logging
 import sys
 
 from gtfb import __version__
-from gtfb.config import DEFAULT_TARGET_HOUR, DEFAULT_TARGET_MINUTE, setup_logging
+from gtfb.config import (
+    DEFAULT_TARGET_HOUR,
+    DEFAULT_TARGET_MINUTE,
+    ConfigProfile,
+    load_config_resilient,
+    setup_logging,
+)
 from gtfb.core.scheduler import BedtimeScheduler, run_scheduler_cli
 from gtfb.ui.tray import TrayApp
 
@@ -31,14 +37,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hour",
         type=int,
-        default=DEFAULT_TARGET_HOUR,
-        help=f"Target shutdown hour (0-23, default: {DEFAULT_TARGET_HOUR})",
+        default=None,
+        help=f"Target shutdown hour (0-23, default: saved setting, else {DEFAULT_TARGET_HOUR})",
     )
     parser.add_argument(
         "--minute",
         type=int,
-        default=DEFAULT_TARGET_MINUTE,
-        help=f"Target shutdown minute (0-59, default: {DEFAULT_TARGET_MINUTE})",
+        default=None,
+        help=f"Target shutdown minute (0-59, default: saved setting, else {DEFAULT_TARGET_MINUTE})",
     )
     parser.add_argument(
         "--no-shutdown",
@@ -75,11 +81,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def load_startup_config(hour: int | None = None, minute: int | None = None) -> ConfigProfile:
+    """Load the saved configuration and apply command-line overrides in memory only."""
+    try:
+        profile = load_config_resilient()
+    except Exception as err:
+        logger.exception("Could not load saved configuration, using defaults: %s", err)
+        profile = ConfigProfile()
+
+    if hour is not None:
+        profile.app_close_schedule.target_hour = hour
+    if minute is not None:
+        profile.app_close_schedule.target_minute = minute
+    return profile
+
+
 def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     setup_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.hour is not None and not 0 <= args.hour <= 23:
+        parser.error("--hour must be between 0 and 23")
+    if args.minute is not None and not 0 <= args.minute <= 59:
+        parser.error("--minute must be between 0 and 59")
 
     if args.check_system:
         from gtfb.core.platform_utils import print_system_diagnostics
@@ -121,11 +147,14 @@ def main(argv: list[str] | None = None) -> int:
             print("Opening the startup folder is only supported on Windows.", file=sys.stderr)
             return 1
 
+    config = load_startup_config(hour=args.hour, minute=args.minute)
+    schedule = config.app_close_schedule
+
     if args.cli:
         try:
             run_scheduler_cli(
-                target_hour=args.hour,
-                target_minute=args.minute,
+                target_hour=schedule.target_hour,
+                target_minute=schedule.target_minute,
                 shutdown=not args.no_shutdown,
                 dry_run=args.dry_run,
             )
@@ -140,12 +169,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         scheduler = BedtimeScheduler(
-            target_hour=args.hour,
-            target_minute=args.minute,
+            target_hour=schedule.target_hour,
+            target_minute=schedule.target_minute,
             dry_run=args.dry_run,
             shutdown=not args.no_shutdown,
+            enabled=schedule.enabled,
         )
-        app = TrayApp(scheduler=scheduler)
+        app = TrayApp(scheduler=scheduler, config=config)
         app.run()
         return 0
     except KeyboardInterrupt:

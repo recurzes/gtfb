@@ -93,8 +93,9 @@ class TestAppCliParser(unittest.TestCase):
     def test_default_args(self):
         parser = build_parser()
         args = parser.parse_args([])
-        self.assertEqual(args.hour, 22)
-        self.assertEqual(args.minute, 0)
+        # Unset by default so the saved configuration decides the bedtime
+        self.assertIsNone(args.hour)
+        self.assertIsNone(args.minute)
         self.assertFalse(args.no_shutdown)
         self.assertFalse(args.dry_run)
 
