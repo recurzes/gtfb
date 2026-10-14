@@ -260,6 +260,20 @@ class TestBlocklistSection(unittest.TestCase):
         self.assertEqual(section.domains, ["reddit.com"])
         self.assertEqual(section.listbox.size(), 1)
 
+
+    def test_blocklist_add_invalid_domain_warns(self):
+        section = BlocklistSection(self.root, initial_domains=["reddit.com"])
+
+        section.entry_domain.insert(0, "foo bar")
+        with patch("tkinter.messagebox.showwarning") as mock_warn:
+            section.on_add()
+            mock_warn.assert_called_once_with(
+                "Invalid Domain", "'foo bar' is not a valid domain."
+            )
+
+        self.assertEqual(section.domains, ["reddit.com"])
+        self.assertEqual(section.listbox.size(), 1)
+
     def test_blocklist_add_domain_empty_noop(self):
         section = BlocklistSection(self.root, initial_domains=["reddit.com"])
 

@@ -1,5 +1,6 @@
 """Disk storage and discovery helpers for GTFB configuration."""
 
+from datetime import datetime
 import json
 import logging
 import os
@@ -89,14 +90,28 @@ def save_config(
     return save_config_atomic(profile, path)
 
 
+def _quarantine(path: Path) -> Optional[Path]:
+    """Copy a rejected config file to config.corrupt-<timestamp>.json next to it."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    corrupt_path = path.with_name(f"{path.stem}.corrupt-{stamp}{path.suffix}")
+    try:
+        shutil.copy2(path, corrupt_path)
+        logger.warning("Preserved rejected config file as %s", corrupt_path)
+        return corrupt_path
+    except Exception as err:
+        logger.warning("Could not preserve rejected config file %s: %s", path, err)
+        return None
+
+
 def load_config_resilient(path: Optional[Union[str, Path]] = None) -> ConfigProfile:
     """Load ConfigProfile from disk with backup fallback and self-healing recovery.
 
     - If primary file is missing:
       - If backup exists, recover from backup and restore primary file.
       - Otherwise create and save default ConfigProfile.
-    - If primary file is corrupt or invalid:
+    - If primary file is corrupt or invalid (a copy is kept as config.corrupt-<timestamp>.json):
       - If backup exists and is valid, recover from backup and restore primary file.
+      - Otherwise, if the primary is readable JSON, keep its valid fields and reset the invalid ones.
       - Otherwise create and save default ConfigProfile.
     """
     target_path = Path(path) if path is not None else get_config_path()
@@ -126,6 +141,7 @@ def load_config_resilient(path: Optional[Union[str, Path]] = None) -> ConfigProf
         save_config_atomic(default_profile, target_path)
         return default_profile
 
+    primary_data = None
     try:
         with open(target_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -133,11 +149,15 @@ def load_config_resilient(path: Optional[Union[str, Path]] = None) -> ConfigProf
             raise ValueError(
                 f"Config root must be a dictionary, got {type(data).__name__}"
             )
+        primary_data = data
         return ConfigProfile.from_dict(data)
     except Exception as err:
         logger.error(
             "Failed to load primary config (%s): %s. Checking backup.", target_path, err
         )
+
+    # Keep a copy of the rejected file so nothing is lost when it gets replaced below
+    _quarantine(target_path)
 
     if bak_file.exists():
         try:
@@ -152,10 +172,19 @@ def load_config_resilient(path: Optional[Union[str, Path]] = None) -> ConfigProf
             save_config_atomic(profile, target_path)
             return profile
         except Exception as bak_err:
-            logger.error(
-                "Backup file also corrupt: %s. Resetting to defaults.", bak_err
-            )
+            logger.error("Backup file also corrupt: %s.", bak_err)
 
+    if primary_data is not None:
+        # Readable JSON with some invalid fields: keep every valid setting
+        profile = ConfigProfile.from_dict(primary_data, strict=False)
+        logger.warning(
+            "Salvaged configuration from %s; invalid fields were reset to defaults.",
+            target_path,
+        )
+        save_config_atomic(profile, target_path)
+        return profile
+
+    logger.error("Configuration could not be recovered. Resetting to defaults.")
     default_profile = ConfigProfile()
     save_config_atomic(default_profile, target_path)
     return default_profile

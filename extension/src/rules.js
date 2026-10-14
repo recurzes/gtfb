@@ -34,6 +34,36 @@ export function sanitizeDomain(domain) {
 }
 
 /**
+ * Converts a sanitized domain to its ASCII (punycode) form, as required by urlFilter.
+ * @param {string} domain - Sanitized domain string
+ * @returns {string} ASCII domain, or empty string if it cannot be parsed as a hostname
+ */
+export function toAsciiDomain(domain) {
+  if (!domain) {
+    return "";
+  }
+  try {
+    return new URL(`http://${domain}`).hostname;
+  } catch (e) {
+    return "";
+  }
+}
+
+/**
+ * Checks that a domain consists only of valid hostname labels.
+ * @param {string} domain - ASCII domain string
+ * @returns {boolean} True if the domain is safe to compile into a rule
+ */
+export function isValidDomain(domain) {
+  if (!domain || typeof domain !== "string" || domain.length > 253) {
+    return false;
+  }
+  return domain
+    .split(".")
+    .every((label) => /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+}
+
+/**
  * Compiles a list of domains into declarativeNetRequest Rule objects.
  * @param {string[]} domains - List of domain strings to block
  * @returns {Array<object>} Array of declarativeNetRequest rule objects
@@ -43,9 +73,11 @@ export function compileBlockRules(domains = TEST_DOMAINS) {
     return [];
   }
 
+  // Invalid entries are dropped so one bad domain cannot reject the whole rule update
   const validDomains = domains
     .map(sanitizeDomain)
-    .filter((d) => Boolean(d));
+    .map(toAsciiDomain)
+    .filter(isValidDomain);
 
   // Deduplicate domains while preserving order
   const uniqueDomains = [...new Set(validDomains)];
@@ -58,7 +90,8 @@ export function compileBlockRules(domains = TEST_DOMAINS) {
       redirect: { extensionPath: `/src/blocked.html?domain=${encodeURIComponent(domain)}` }
     },
     condition: {
-      urlFilter: `||${domain}`,
+      // Trailing ^ ends the hostname, so x.com does not also match x.company.io
+      urlFilter: `||${domain}^`,
       resourceTypes: ["main_frame"]
     }
   }));

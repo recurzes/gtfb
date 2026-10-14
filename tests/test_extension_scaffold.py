@@ -56,6 +56,23 @@ def test_manifest_structure_and_mv3():
             assert icon_file.is_file(), f"Icon file missing at {icon_file}"
 
 
+
+
+def test_manifest_blocked_page_is_web_accessible():
+    """The page that block rules redirect to must be web accessible, or the browser refuses the redirect."""
+    manifest_path = EXTENSION_DIR / "manifest.json"
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    entries = manifest.get("web_accessible_resources", [])
+    resources = [res for entry in entries for res in entry.get("resources", [])]
+    assert "src/blocked.html" in resources
+    assert (EXTENSION_DIR / "src" / "blocked.html").is_file()
+
+    rules_source = (EXTENSION_DIR / "src" / "rules.js").read_text(encoding="utf-8")
+    assert "/src/blocked.html" in rules_source
+
+
 @pytest.mark.parametrize("size", [16, 48, 128])
 def test_extension_icons(size):
     """Verify that icon PNG assets exist and have expected dimensions."""

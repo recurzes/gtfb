@@ -3,6 +3,9 @@
 import re
 from urllib.parse import urlparse
 
+# A single hostname label: letters, digits and inner hyphens
+_LABEL_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
 
 def clean_domain_input(raw: str) -> str:
     """Sanitize a raw domain or URL string into a clean hostname.
@@ -50,4 +53,17 @@ def clean_domain_input(raw: str) -> str:
     if domain.startswith("www."):
         domain = domain[4:]
 
-    return domain.strip()
+    domain = domain.strip()
+    if not domain:
+        return ""
+
+    # Convert international names to ASCII (punycode), as required by browser block rules
+    try:
+        domain = domain.encode("idna").decode("ascii")
+    except UnicodeError:
+        return ""
+
+    if len(domain) > 253 or not all(_LABEL_RE.match(label) for label in domain.split(".")):
+        return ""
+
+    return domain

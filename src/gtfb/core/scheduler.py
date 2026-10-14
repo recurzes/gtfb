@@ -56,6 +56,10 @@ class BedtimeScheduler:
         check_interval: float = 1.0,
         closer_fn: Optional[Callable[..., Any]] = None,
         enabled: bool = True,
+        late_tolerance: float = 300.0,
+        enforcing_hold: float = 60.0,
+        grace_period_seconds: Optional[float] = None,
+        force_kill: Optional[bool] = None,
     ) -> None:
         self.target_hour = target_hour
         self.target_minute = target_minute
@@ -63,6 +67,13 @@ class BedtimeScheduler:
         self.dry_run = dry_run
         self.shutdown = shutdown
         self.check_interval = check_interval
+        # Bedtime reached later than this (e.g. the system was asleep) is skipped, not enforced
+        self.late_tolerance = late_tolerance
+        # How long the ENFORCING state is reported after a trigger before counting down again
+        self.enforcing_hold = enforcing_hold
+        # Closer settings; None leaves the closer's own defaults in effect
+        self.grace_period_seconds = grace_period_seconds
+        self.force_kill = force_kill
         self.closer_fn = closer_fn or close_gui_apps
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -80,6 +91,8 @@ class BedtimeScheduler:
             self.target_hour = schedule.target_hour
             self.target_minute = schedule.target_minute
             self.enabled = schedule.enabled
+            self.grace_period_seconds = schedule.grace_period_seconds
+            self.force_kill = schedule.force_kill_after_grace
             logger.info(
                 "Scheduler updated in-memory: Bedtime set to %02d:%02d (enabled=%s)",
                 self.target_hour,
@@ -170,12 +183,40 @@ class BedtimeScheduler:
                 self._thread.join(timeout=timeout)
                 logger.info("Bedtime scheduler worker stopped.")
 
+    def _next_target_after(self, previous_target: datetime) -> datetime:
+        """Return the next bedtime target strictly later than an already handled one."""
+        target = self.get_next_target()
+        if target <= previous_target:
+            target = previous_target + timedelta(days=1)
+        return target
+
+    def _enforce_bedtime(self) -> None:
+        """Run the application closing routine and optional system shutdown."""
+        logger.warning("Bedtime reached! Executing application closing routine.")
+        closer_kwargs: dict[str, Any] = {"dry_run": self.dry_run}
+        if self.grace_period_seconds is not None:
+            closer_kwargs["grace_period"] = self.grace_period_seconds
+        if self.force_kill is not None:
+            closer_kwargs["force_kill"] = self.force_kill
+
+        try:
+            self.closer_fn(**closer_kwargs)
+        except TypeError:
+            self.closer_fn()
+        except Exception as err:
+            logger.exception("Error executing bedtime closer routine: %s", err)
+
+        if self.shutdown and not self.dry_run:
+            logger.info("Initiating scheduled system shutdown...")
+            shutdown_system(target_hour=self.target_hour, target_minute=self.target_minute)
+
     def _run_loop(self) -> None:
-        """Worker loop executing the bedtime countdown."""
+        """Worker loop executing the bedtime countdown, re-arming for the next day after each target."""
         logger.info("Bedtime scheduler worker loop running.")
         last_hour = self.target_hour
         last_minute = self.target_minute
         target_time = self.get_next_target()
+        enforcing_until: Optional[datetime] = None
         logger.info("Next scheduled bedtime target: %s", target_time.strftime("%Y-%m-%d %H:%M:%S"))
 
         while not self._stop_event.is_set():
@@ -189,29 +230,30 @@ class BedtimeScheduler:
                 )
 
             now = datetime.now()
+            if enforcing_until is not None and now >= enforcing_until:
+                enforcing_until = None
+                self._state = SchedulerState.COUNTING_DOWN
+
             time_remaining = (target_time - now).total_seconds()
 
             if time_remaining <= 0:
-                if self.enabled:
+                if -time_remaining > self.late_tolerance:
+                    logger.warning(
+                        "Missed bedtime target %s by %d seconds (system was asleep or suspended); skipping.",
+                        target_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        int(-time_remaining),
+                    )
+                elif self.enabled:
                     self._state = SchedulerState.ENFORCING
-                    logger.warning("Bedtime reached! Executing application closing routine.")
-                    try:
-                        self.closer_fn(dry_run=self.dry_run)
-                    except TypeError:
-                        self.closer_fn()
-                    except Exception as err:
-                        logger.exception("Error executing bedtime closer routine: %s", err)
-
-                    if self.shutdown and not self.dry_run:
-                        logger.info("Initiating scheduled system shutdown...")
-                        shutdown_system(target_hour=self.target_hour, target_minute=self.target_minute)
+                    self._enforce_bedtime()
+                    enforcing_until = datetime.now() + timedelta(seconds=self.enforcing_hold)
                 else:
                     logger.info("Bedtime reached but enforcement is disabled in config.")
-                break
+
+                target_time = self._next_target_after(target_time)
+                logger.info("Next scheduled bedtime target: %s", target_time.strftime("%Y-%m-%d %H:%M:%S"))
 
             self._stop_event.wait(timeout=self.check_interval)
-
-
 
 
 def wait_until_shutdown_time(
@@ -282,6 +324,8 @@ def run_scheduler_cli(
     target_minute: int = DEFAULT_TARGET_MINUTE,
     shutdown: bool = True,
     dry_run: bool = False,
+    grace_period: Optional[float] = None,
+    force_kill: bool = True,
 ) -> None:
     """CLI runner executing the complete bedtime automation routine."""
     print(f"\nDetected Operating System: {CURRENT_OS}")
@@ -309,7 +353,10 @@ def run_scheduler_cli(
     if not completed:
         return
 
-    close_gui_applications()
+    if grace_period is None:
+        close_gui_applications(force_kill=force_kill)
+    else:
+        close_gui_applications(grace_period=grace_period, force_kill=force_kill)
 
     if shutdown:
         print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Preparing for system shutdown...")

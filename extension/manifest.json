@@ -15,6 +15,12 @@
     "http://127.0.0.1:*/*",
     "http://localhost:*/*"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/blocked.html"],
+      "matches": ["*://*/*"]
+    }
+  ],
   "background": {
     "service_worker": "src/background.js",
     "type": "module"

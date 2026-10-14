@@ -185,6 +185,8 @@ class BlocklistSection(ttk.LabelFrame):
         raw = self.entry_domain.get()
         cleaned = clean_domain_input(raw)
         if not cleaned:
+            if raw.strip():
+                messagebox.showwarning("Invalid Domain", f"'{raw.strip()}' is not a valid domain.")
             return
         if cleaned in self.domains:
             messagebox.showwarning("Duplicate", f"'{cleaned}' is already in the blocklist.")

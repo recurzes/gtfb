@@ -3,6 +3,7 @@
 import os
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 import psutil
 
@@ -87,14 +88,78 @@ class TestPlatformAndProcessUtils(unittest.TestCase):
             self.assertIsInstance(item[1], str)
 
 
+class TestCloserSafety(unittest.TestCase):
+    """Test that the closer protects itself and honours the grace period."""
+
+    def test_protected_pids_include_self_and_parent(self):
+        from gtfb.core.closer import _protected_pids
+
+        protected = _protected_pids()
+        self.assertIn(os.getpid(), protected)
+        self.assertIn(os.getppid(), protected)
+
+    def test_get_running_gui_apps_skips_own_and_parent_windows(self):
+        own_pid, parent_pid, other_pid = 111, 222, 333
+        windows = {own_pid: "GTFB — Settings", parent_pid: "Terminal", other_pid: "Notepad"}
+
+        def fake_process(pid):
+            proc = MagicMock()
+            proc.pid = pid
+            proc.name.return_value = "notepad.exe"
+            return proc
+
+        with patch("gtfb.core.closer.platform_utils.CURRENT_OS", "Windows"), \
+             patch("gtfb.core.closer.platform_utils.PYWIN32_AVAILABLE", True), \
+             patch("gtfb.core.closer.get_gui_windows_pywin32", return_value=windows), \
+             patch("gtfb.core.closer._protected_pids", return_value={own_pid, parent_pid}), \
+             patch("gtfb.core.closer.psutil.Process", side_effect=fake_process):
+            apps = get_running_gui_apps()
+
+        self.assertEqual([(proc.pid, title) for proc, title in apps], [(other_pid, "Notepad")])
+
+    def _run_close(self, **kwargs):
+        from gtfb.core.closer import close_gui_applications
+
+        quick = MagicMock()
+        quick.pid = 1
+        quick.name.return_value = "quick.exe"
+        stubborn = MagicMock()
+        stubborn.pid = 2
+        stubborn.name.return_value = "stubborn.exe"
+
+        with patch("gtfb.core.closer.get_running_gui_apps", return_value=[(quick, "Quick"), (stubborn, "Stubborn")]), \
+             patch("gtfb.core.closer._request_close") as mock_request, \
+             patch("gtfb.core.closer.psutil.wait_procs", return_value=([quick], [stubborn])) as mock_wait:
+            closed = close_gui_applications(**kwargs)
+
+        return closed, quick, stubborn, mock_request, mock_wait
+
+    def test_close_waits_one_shared_grace_period_then_force_kills(self):
+        closed, quick, stubborn, mock_request, mock_wait = self._run_close(grace_period=20)
+
+        self.assertEqual(mock_request.call_count, 2)
+        mock_wait.assert_called_once()
+        self.assertEqual(mock_wait.call_args.kwargs["timeout"], 20)
+        quick.kill.assert_not_called()
+        stubborn.kill.assert_called_once()
+        self.assertEqual(closed, ["quick.exe", "stubborn.exe"])
+
+    def test_close_leaves_survivors_running_when_force_kill_disabled(self):
+        closed, _, stubborn, _, _ = self._run_close(grace_period=20, force_kill=False)
+
+        stubborn.kill.assert_not_called()
+        self.assertEqual(closed, ["quick.exe"])
+
+
 class TestAppCliParser(unittest.TestCase):
     """Test CLI argument parsing."""
 
     def test_default_args(self):
         parser = build_parser()
         args = parser.parse_args([])
-        self.assertEqual(args.hour, 22)
-        self.assertEqual(args.minute, 0)
+        # Unset by default so the saved configuration decides the bedtime
+        self.assertIsNone(args.hour)
+        self.assertIsNone(args.minute)
         self.assertFalse(args.no_shutdown)
         self.assertFalse(args.dry_run)
 
